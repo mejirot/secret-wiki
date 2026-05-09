@@ -16,3 +16,7 @@ dev-server.*.log
 vault/*
 !vault/cooking/
 !vault/cooking/**
+!vault/boardgame/
+vault/boardgame/*
+!vault/boardgame/coffee_rush.md
+!vault/boardgame/coffee_rush/
