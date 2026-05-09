@@ -5,12 +5,15 @@ import {
   BookOpen,
   Image,
   Folder,
+  Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   Link2,
   Lock,
   RefreshCcw,
   Search,
+  Send,
   Shield,
   Sparkles,
   Tag
@@ -137,25 +140,94 @@ function singleChildYoutubeEmbed(children: React.ReactNode) {
 }
 
 function normalizeWikiTarget(target: string) {
-  return target.replace(/\\/g, "/").replace(/\.md$/i, "").replace(/^\/+/, "").replace(/\/+$/, "");
+  return target.trim().split("#")[0].replace(/\\/g, "/").replace(/\.md$/i, "").replace(/^\/+/, "").replace(/\/+$/, "");
 }
 
-function resolveWikiLink(target: string, notes: NoteSummary[]) {
+function normalizePathSegments(pathValue: string) {
+  const parts: string[] = [];
+  for (const part of pathValue.split("/")) {
+    if (!part || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function resolveWikiLink(target: string, notes: NoteSummary[], fromId?: string) {
   const normalized = normalizeWikiTarget(target);
   const exact = notes.find((note) => note.id === normalized);
   if (exact) {
     return exact.id;
   }
+  if (fromId && !target.startsWith("/")) {
+    const parent = fromId.split("/").slice(0, -1).join("/");
+    const relative = normalizePathSegments([parent, normalized].filter(Boolean).join("/"));
+    const relativeMatch = notes.find((note) => note.id === relative);
+    if (relativeMatch) {
+      return relativeMatch.id;
+    }
+  }
   const basenameMatches = notes.filter((note) => note.id.split("/").at(-1) === normalized);
   return basenameMatches.length === 1 ? basenameMatches[0].id : undefined;
 }
 
-function renderWikiLinks(body: string, notes: NoteSummary[]) {
-  return body.replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, label?: string) => {
-    const resolved = resolveWikiLink(target, notes);
+function renderWikiLinks(body: string, notes: NoteSummary[], fromId?: string) {
+  const withWikiLinks = body.replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, label?: string) => {
+    const resolved = resolveWikiLink(target, notes, fromId);
     const text = label || target;
-    return resolved ? `[${text}](/note/${encodeURIComponent(resolved)})` : `${text}`;
+    return resolved ? `[${text}](${notePath(resolved)})` : `${text}`;
   });
+
+  return withWikiLinks.replace(/(?<!!)\[([^\]]+)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)/g, (match, label: string, target: string) => {
+    if (/^(https?:|mailto:|#|data:)/i.test(target)) {
+      return match;
+    }
+    const resolved = resolveWikiLink(target, notes, fromId);
+    return resolved ? `[${label}](${notePath(resolved)})` : match;
+  });
+}
+
+function notePath(id: string) {
+  return `/note/${id.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function noteIdFromPathname(pathname = window.location.pathname) {
+  const [root, ...parts] = pathname.split("/").filter(Boolean);
+  if (root !== "note" || parts.length === 0) {
+    return undefined;
+  }
+  try {
+    return parts.map(decodeURIComponent).join("/");
+  } catch {
+    return undefined;
+  }
+}
+
+function replaceBrowserNote(id: string) {
+  const nextPath = notePath(id);
+  if (window.location.pathname !== nextPath) {
+    window.history.replaceState(null, "", nextPath);
+  }
+}
+
+function pushBrowserNote(id: string) {
+  const nextPath = notePath(id);
+  if (window.location.pathname !== nextPath) {
+    window.history.pushState(null, "", nextPath);
+  }
+}
+
+function noteShareUrl(id: string) {
+  return `${window.location.origin}${notePath(id)}`;
+}
+
+function blueskyShareUrl(note: Pick<NoteDetail, "id" | "title">) {
+  return `https://bsky.app/intent/compose?text=${encodeURIComponent(`${note.title}\n${noteShareUrl(note.id)}`)}`;
 }
 
 function renderMediaLinks(body: string, note: NoteDetail) {
@@ -249,20 +321,38 @@ async function loadWikiNote(id: string, mode: DataMode) {
 
 function App() {
   const [index, setIndex] = useState<WikiIndex>(emptyIndex);
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>(() => noteIdFromPathname() ?? "");
   const [selected, setSelected] = useState<NoteDetail | null>(null);
   const [query, setQuery] = useState("");
   const [activeTag, setActiveTag] = useState("");
   const [activeFolder, setActiveFolder] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [dataMode, setDataMode] = useState<DataMode>(forcedPublicMode ? "public" : "local");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   async function loadIndex(preferredId?: string) {
     const { index: nextIndex, mode } = await loadWikiIndex();
     setDataMode(mode);
     setIndex(nextIndex);
-    const nextId = preferredId || selectedId || nextIndex.notes[0]?.id || "";
+    const routeId = noteIdFromPathname();
+    const requestedId = preferredId || routeId || selectedId;
+    const nextId = requestedId && nextIndex.notes.some((note) => note.id === requestedId) ? requestedId : nextIndex.notes[0]?.id || "";
     setSelectedId(nextId);
+    if (nextId) {
+      replaceBrowserNote(nextId);
+    }
+  }
+
+  function selectNote(id: string, options: { replace?: boolean } = {}) {
+    setQuery("");
+    setActiveTag("");
+    setActiveFolder("");
+    setSelectedId(id);
+    if (options.replace) {
+      replaceBrowserNote(id);
+    } else {
+      pushBrowserNote(id);
+    }
   }
 
   async function refreshGeneratedIndexes() {
@@ -292,6 +382,33 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function syncFromHistory() {
+      const routeId = noteIdFromPathname();
+      if (!routeId) {
+        const fallbackId = index.notes[0]?.id;
+        if (fallbackId) {
+          selectNote(fallbackId, { replace: true });
+        }
+        return;
+      }
+      if (index.notes.some((note) => note.id === routeId)) {
+        setQuery("");
+        setActiveTag("");
+        setActiveFolder("");
+        setSelectedId(routeId);
+        return;
+      }
+      const fallbackId = index.notes[0]?.id;
+      if (fallbackId) {
+        selectNote(fallbackId, { replace: true });
+      }
+    }
+
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, [index.notes]);
+
+  useEffect(() => {
     if (!selectedId) {
       setSelected(null);
       return;
@@ -304,6 +421,10 @@ function App() {
         setSelected(null);
       });
   }, [dataMode, selectedId]);
+
+  useEffect(() => {
+    setCopyStatus("idle");
+  }, [selectedId]);
 
   useEffect(() => {
     const ancestors = ancestorFolders(activeFolder);
@@ -342,7 +463,7 @@ function App() {
   const notesById = useMemo(() => new Map(index.notes.map((note) => [note.id, note])), [index.notes]);
   const folderTree = useMemo(() => buildFolderTree(index.folders), [index.folders]);
 
-  const visibleBody = selected ? renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes), selected) : "";
+  const visibleBody = selected ? renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes, selected.id), selected) : "";
 
   function selectFolder(node: FolderTreeNode) {
     setActiveFolder(node.path);
@@ -391,6 +512,18 @@ function App() {
         {hasChildren && isExpanded ? node.children.map((child) => renderFolderNode(child, depth + 1)) : null}
       </React.Fragment>
     );
+  }
+
+  async function copyCurrentNoteLink() {
+    if (!selected) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(noteShareUrl(selected.id));
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
   }
 
   return (
@@ -448,7 +581,7 @@ function App() {
         </div>
         <div className="noteList">
           {filteredNotes.map((note) => (
-            <button key={note.id} className={selectedId === note.id ? "noteRow active" : "noteRow"} onClick={() => setSelectedId(note.id)}>
+            <button key={note.id} className={selectedId === note.id ? "noteRow active" : "noteRow"} onClick={() => selectNote(note.id)}>
               {coverUrl(note) && <img className="noteCover" src={coverUrl(note)} alt="" />}
               <span className="noteTitle">{note.title}</span>
               <span className="notePath">{note.path}</span>
@@ -503,9 +636,9 @@ function App() {
                   },
                   a: ({ href, children }) => {
                     if (href?.startsWith("/note/")) {
-                      const target = decodeURIComponent(href.replace("/note/", ""));
+                      const target = noteIdFromPathname(href);
                       return (
-                        <button className="inlineLink" onClick={() => setSelectedId(target)}>
+                        <button className="inlineLink" onClick={() => target && selectNote(target)}>
                           {children}
                         </button>
                       );
@@ -521,6 +654,23 @@ function App() {
               >
                 {visibleBody}
               </ReactMarkdown>
+              <footer className="shareFooter">
+                <div>
+                  <strong>Share this note</strong>
+                  <span>{noteShareUrl(selected.id)}</span>
+                </div>
+                <div className="shareActions">
+                  <button className="shareButton" onClick={() => void copyCurrentNoteLink()}>
+                    {copyStatus === "copied" ? <Check size={15} /> : <Copy size={15} />}
+                    {copyStatus === "copied" ? "Copied" : "Copy link"}
+                  </button>
+                  <a className="shareButton" href={blueskyShareUrl(selected)} target="_blank" rel="noreferrer">
+                    <Send size={15} />
+                    Bluesky
+                  </a>
+                </div>
+                {copyStatus === "failed" && <p className="shareStatus">Could not copy. Use the URL above.</p>}
+              </footer>
             </article>
           </>
         ) : (
@@ -550,8 +700,8 @@ function App() {
 
             <section>
               <h2>Links</h2>
-              <LinkList title="Outgoing" ids={selected.outgoing} notesById={notesById} onSelect={setSelectedId} />
-              <LinkList title="Backlinks" ids={selected.backlinks} notesById={notesById} onSelect={setSelectedId} />
+              <LinkList title="Outgoing" ids={selected.outgoing} notesById={notesById} onSelect={selectNote} />
+              <LinkList title="Backlinks" ids={selected.backlinks} notesById={notesById} onSelect={selectNote} />
               {selected.brokenLinks.length > 0 && (
                 <div className="linkGroup broken">
                   <strong>Broken</strong>

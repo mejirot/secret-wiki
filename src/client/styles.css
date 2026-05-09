@@ -472,6 +472,63 @@ button {
   text-decoration: underline;
 }
 
+.shareFooter {
+  display: grid;
+  gap: 12px;
+  margin-top: 46px;
+  padding-top: 18px;
+  border-top: 1px solid #ece9df;
+}
+
+.shareFooter > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.shareFooter strong {
+  color: #445049;
+  font-size: 13px;
+}
+
+.shareFooter span,
+.shareStatus {
+  margin: 0;
+  color: #68736b;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.shareActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shareButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid #d8d5ca;
+  border-radius: 7px;
+  background: #fffefa;
+  padding: 0 10px;
+  color: #17684c;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.shareButton:hover {
+  background: #e2eadf;
+  color: #103426;
+}
+
+.shareStatus {
+  color: #7f3e24;
+}
+
 .inspector {
   display: flex;
   flex-direction: column;
