@@ -1,9 +1,15 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "secret-wiki",
+  "name": "secret-wiki-note",
   "compatibility_date": "2026-05-05",
   "assets": {
     "directory": "./exports/public",
     "not_found_handling": "single-page-application"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "wiki.mejilab.com",
+      "custom_domain": true
+    }
+  ]
 }

@@ -14,6 +14,5 @@ dev-server.*.log
 
 # Keep generated and local vault data out of commits by default.
 vault/*
-!vault/index.md
-!vault/sample/
-!vault/sample/**
+!vault/cooking/
+!vault/cooking/**
