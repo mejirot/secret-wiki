@@ -344,9 +344,6 @@ function App() {
   }
 
   function selectNote(id: string, options: { replace?: boolean } = {}) {
-    setQuery("");
-    setActiveTag("");
-    setActiveFolder("");
     setSelectedId(id);
     if (options.replace) {
       replaceBrowserNote(id);
@@ -392,9 +389,6 @@ function App() {
         return;
       }
       if (index.notes.some((note) => note.id === routeId)) {
-        setQuery("");
-        setActiveTag("");
-        setActiveFolder("");
         setSelectedId(routeId);
         return;
       }
