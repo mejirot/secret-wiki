@@ -421,6 +421,10 @@ function App() {
   }, [selectedId]);
 
   useEffect(() => {
+    document.title = selected ? `${selected.title} | Wiki` : "Wiki";
+  }, [selected]);
+
+  useEffect(() => {
     const ancestors = ancestorFolders(activeFolder);
     if (ancestors.length === 0) {
       return;
