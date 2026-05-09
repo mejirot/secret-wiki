@@ -1,0 +1,19 @@
+node_modules/
+extensions/*/node_modules/
+extensions/*/out/
+extensions/*/*.vsix
+dist/
+exports/
+.wrangler/
+.vite/
+coverage/
+npm-debug.log*
+dev-server.*.log
+.messages/
+.vs/
+
+# Keep generated and local vault data out of commits by default.
+vault/*
+!vault/index.md
+!vault/sample/
+!vault/sample/**

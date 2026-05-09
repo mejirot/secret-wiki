@@ -1,0 +1,57 @@
+{
+  "name": "secret-wiki-tags",
+  "displayName": "Secret Wiki Tags",
+  "description": "Tag completion, diagnostics, and quick fixes for Secret Wiki Markdown frontmatter.",
+  "version": "0.1.0",
+  "publisher": "secret-wiki",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "workspaceContains:wiki-tags.json"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "secretWikiTags.reloadTagConfig",
+        "title": "Secret Wiki Tags: Reload Tag Config"
+      }
+    ],
+    "configuration": {
+      "title": "Secret Wiki Tags",
+      "properties": {
+        "secretWikiTags.configFile": {
+          "type": "string",
+          "default": "wiki-tags.json",
+          "description": "Workspace-relative path to the canonical Secret Wiki tag configuration."
+        },
+        "secretWikiTags.vaultGlob": {
+          "type": "string",
+          "default": "vault/**/*.md",
+          "description": "Workspace glob for Markdown files that should receive tag diagnostics."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -watch -p tsconfig.json",
+    "test": "npm run build && node --test out/test/*.test.js",
+    "package": "npm run build && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "1.118.0",
+    "@vscode/test-electron": "2.5.2",
+    "typescript": "6.0.3",
+    "vsce": "2.15.0"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "secret-wiki",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,blue \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1\"",
+    "build": "tsc -p tsconfig.json && vite build",
+    "build:public": "tsc -p tsconfig.json && vite build --mode public && tsx src/scripts/buildPublic.ts",
+    "deploy:public": "npm run build:public && wrangler deploy",
+    "preview": "node dist/server/index.js",
+    "test": "vitest run",
+    "extension:build": "npm --prefix extensions/secret-wiki-tags run build",
+    "extension:test": "npm --prefix extensions/secret-wiki-tags run test",
+    "extension:package": "npm --prefix extensions/secret-wiki-tags run package",
+    "mcp": "tsx src/mcp/server.ts",
+    "index:generate": "tsx src/scripts/generateIndexes.ts",
+    "export:public": "tsx src/scripts/exportPublic.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.1.2",
+    "express": "^5.1.0",
+    "gray-matter": "^4.0.3",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^9.0.1",
+    "tsx": "^4.19.2",
+    "vite": "^6.0.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^4.87.0"
+  }
+}
