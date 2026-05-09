@@ -532,7 +532,7 @@ function App() {
         <div className="brand">
           <BookOpen size={22} />
           <div>
-            <strong>Secret Wiki</strong>
+            <strong>Wiki</strong>
             <span>{dataMode === "public" ? "Public site" : `${index.notes.length} notes`}</span>
           </div>
         </div>

@@ -59,7 +59,7 @@ function socialMetaTags(note: NoteDetail) {
   const imageUrl = socialImageUrl(note);
   const description = note.excerpt || note.title;
   const tags = [
-    `<title>${htmlEscape(note.title)} | Secret Wiki</title>`,
+    `<title>${htmlEscape(note.title)} | Wiki</title>`,
     `<meta name="description" content="${htmlEscape(description)}" />`,
     `<meta property="og:type" content="article" />`,
     `<meta property="og:site_name" content="Secret Wiki" />`,
