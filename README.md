@@ -16,15 +16,6 @@ Secret Wiki is a local-first Markdown wiki with a React web UI, controlled LLM a
 - `npm run index:generate`: generate configured folder indexes
 - `npm run export:public`: export notes and media into `exports/public/data`
 
-If the default development ports are already in use, choose alternate ports:
-
-```powershell
-$env:PORT = "3101"
-$env:SECRET_WIKI_API_PORT = "3101"
-$env:SECRET_WIKI_WEB_PORT = "5175"
-npm run dev
-```
-
 ## Vault Format
 
 Markdown files in `vault/` are the source of truth.
