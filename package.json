@@ -7,7 +7,7 @@
     "dev": "concurrently -n api,web -c green,blue \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1\"",
     "build": "tsc -p tsconfig.json && vite build",
     "build:public": "tsc -p tsconfig.json && vite build --mode public && tsx src/scripts/buildPublic.ts",
-    "deploy:public": "npm run build:public && npx wrangler deploy",
+    "deploy:public": "npm run build:public && npx wrangler pages deploy exports/public --project-name secret-wiki-note --branch main",
     "preview": "node dist/server/index.js",
     "test": "vitest run",
     "extension:build": "npm --prefix extensions/secret-wiki-tags run build",

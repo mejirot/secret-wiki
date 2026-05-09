@@ -13,8 +13,15 @@ Keep private-only changes limited to vault content and deployment configuration 
 
 ## Publish
 
+This workspace publishes the static export to Cloudflare Pages. Create the Pages project once:
+
 ```powershell
-npm run build:public
+npx wrangler pages project create secret-wiki-note --production-branch main
+```
+
+Configure `wiki.mejilab.com` as the Pages custom domain in Cloudflare after the project exists.
+
+```powershell
 npm run deploy:public
 ```
 
