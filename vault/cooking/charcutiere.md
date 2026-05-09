@@ -3,6 +3,7 @@ title: シャルキュティエール
 tags:
   - 料理
   - レシピ
+cover: charcutiere/charcutiere.jpg
 ---
 
 美味いんだが、見た目が美味そうに見えない料理。
