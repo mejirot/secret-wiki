@@ -347,6 +347,38 @@ button {
   object-fit: contain;
 }
 
+.plantUmlDiagram {
+  width: min(100%, 820px);
+  margin: 28px 0;
+  overflow: auto;
+  border: 1px solid #dedbd1;
+  border-radius: 8px;
+  background: #fbfaf5;
+  padding: 16px;
+}
+
+.plantUmlDiagram img {
+  margin: 0 auto;
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.plantUmlDiagramError {
+  border-color: #d7a286;
+  background: #fff7f2;
+}
+
+.plantUmlDiagramError figcaption {
+  margin-bottom: 10px;
+  color: #7f3e24;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plantUmlDiagramError pre {
+  margin: 0;
+}
+
 .youtubeEmbed {
   width: min(100%, 760px);
   aspect-ratio: 16 / 9;
