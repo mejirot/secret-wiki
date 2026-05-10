@@ -100,27 +100,17 @@ describe("wiki store", () => {
     await expect(store.resolveMediaFile("gallery/item", "../secret.jpg")).rejects.toThrow("Invalid media path");
   });
 
-  test("generated folder indexes are protected and omit themselves from the generated list", async () => {
+  test("public export does not generate folder index files", async () => {
     const store = await withStore({
       "boardgame/a.md": "---\ntitle: Alpha\ntags: [boardgame]\n---\nA",
       "boardgame/b/index.md": "---\ntitle: Beta\ntags: [boardgame]\ncover: assets/cover.jpg\n---\nB",
       "boardgame/b/assets/cover.jpg": "cover"
     });
 
-    const generated = await store.generateFolderIndex({ folder: "boardgame" });
-    expect(generated?.id).toBe("boardgame");
+    const result = await store.exportPublicSite();
 
-    const generatedMarkdown = await fs.readFile(path.join(store.vaultDir, "boardgame", "index.md"), "utf8");
-    expect(generatedMarkdown).toContain("auto_index: true");
-    expect(generatedMarkdown).toContain("[[boardgame/a|Alpha]]");
-    expect(generatedMarkdown).toContain("[[boardgame/b|Beta]]");
-    expect(generatedMarkdown).toContain("![cover](b/assets/cover.jpg)");
-    expect(generatedMarkdown).not.toContain("[[boardgame|");
-
-    const protectedStore = await withStore({
-      "boardgame/index.md": "---\ntitle: Hand Written\n---\nDo not overwrite."
-    });
-    await expect(protectedStore.generateFolderIndex({ folder: "boardgame" })).rejects.toThrow("Refusing to overwrite");
+    expect(result.notes.sort()).toEqual(["boardgame/a", "boardgame/b"]);
+    await expect(fs.access(path.join(store.vaultDir, "boardgame", "index.md"))).rejects.toThrow();
   });
 
   test("public export includes all notes and strips local-only frontmatter", async () => {
