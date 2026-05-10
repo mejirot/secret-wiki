@@ -170,9 +170,37 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return updatedAtByPath;
   }
 
+  async function hasUsableGitHistory() {
+    try {
+      const { stdout } = await execFileAsync("git", ["rev-parse", "--is-shallow-repository"], {
+        cwd: rootDir
+      });
+      if (stdout.trim() !== "true") {
+        return true;
+      }
+      try {
+        await execFileAsync("git", ["fetch", "--unshallow", "--filter=blob:none"], {
+          cwd: rootDir,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      } catch {
+        await execFileAsync("git", ["fetch", "--unshallow"], {
+          cwd: rootDir,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function readGitUpdatedAtByPath() {
     const vaultPathspec = gitVaultPathspec();
     if (!vaultPathspec) {
+      return new Map<string, string>();
+    }
+    if (!(await hasUsableGitHistory())) {
       return new Map<string, string>();
     }
     try {
