@@ -9,5 +9,6 @@ llm_access: true
 This sample vault is intentionally small and safe to publish.
 
 - [[sample|Sample Note]]
+- [[plantuml-sample|PlantUML Sample]]
 
 Replace the sample notes with your own content when setting up a workspace.

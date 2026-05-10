@@ -17,3 +17,5 @@ vault/*
 !vault/index.md
 !vault/sample/
 !vault/sample/**
+!vault/plantuml-sample/
+!vault/plantuml-sample/**
