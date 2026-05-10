@@ -144,6 +144,23 @@ button {
   font-style: normal;
 }
 
+.homeFilter {
+  justify-content: flex-start;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.homeFilter svg {
+  flex: 0 0 auto;
+}
+
+.homeFilter span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .folderFilter {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
