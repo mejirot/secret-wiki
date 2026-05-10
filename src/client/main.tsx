@@ -3,12 +3,15 @@ import { createRoot } from "react-dom/client";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import {
   BookOpen,
+  CalendarClock,
   Image,
   Folder,
   Check,
   ChevronDown,
   ChevronRight,
   Copy,
+  FileText,
+  Home,
   Link2,
   Lock,
   RefreshCcw,
@@ -36,6 +39,12 @@ type FolderTreeNode = {
   count: number;
   ownCount: number;
   children: FolderTreeNode[];
+};
+
+type RecentFolder = {
+  path: string;
+  count: number;
+  updatedAt: string;
 };
 
 function buildFolderTree(folders: WikiIndex["folders"]): FolderTreeNode[] {
@@ -294,6 +303,22 @@ function noteIdFromPathname(pathname = window.location.pathname) {
   }
 }
 
+function isNotePath(pathname = window.location.pathname) {
+  return pathname.split("/").filter(Boolean)[0] === "note";
+}
+
+function replaceBrowserHome() {
+  if (window.location.pathname !== "/") {
+    window.history.replaceState(null, "", "/");
+  }
+}
+
+function pushBrowserHome() {
+  if (window.location.pathname !== "/") {
+    window.history.pushState(null, "", "/");
+  }
+}
+
 function replaceBrowserNote(id: string) {
   const nextPath = notePath(id);
   if (window.location.pathname !== nextPath) {
@@ -409,6 +434,31 @@ async function loadWikiNote(id: string, mode: DataMode) {
   return fetchJson<NoteDetail>(`/api/note?id=${encodeURIComponent(id)}`);
 }
 
+function compareUpdatedAtDesc(a: Pick<NoteSummary, "updatedAt">, b: Pick<NoteSummary, "updatedAt">) {
+  return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
+}
+
+function formatUpdatedDate(value?: string) {
+  if (!value) {
+    return "No updates";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function folderLabel(pathValue: string) {
+  return pathValue || "root";
+}
+
 function App() {
   const [index, setIndex] = useState<WikiIndex>(emptyIndex);
   const [selectedId, setSelectedId] = useState<string>(() => noteIdFromPathname() ?? "");
@@ -426,10 +476,12 @@ function App() {
     setIndex(nextIndex);
     const routeId = noteIdFromPathname();
     const requestedId = preferredId || routeId || selectedId;
-    const nextId = requestedId && nextIndex.notes.some((note) => note.id === requestedId) ? requestedId : nextIndex.notes[0]?.id || "";
+    const nextId = requestedId && nextIndex.notes.some((note) => note.id === requestedId) ? requestedId : "";
     setSelectedId(nextId);
-    if (nextId) {
+    if (nextId && preferredId) {
       replaceBrowserNote(nextId);
+    } else if (!nextId && isNotePath()) {
+      replaceBrowserHome();
     }
   }
 
@@ -439,6 +491,15 @@ function App() {
       replaceBrowserNote(id);
     } else {
       pushBrowserNote(id);
+    }
+  }
+
+  function selectHome(options: { replace?: boolean } = {}) {
+    setSelectedId("");
+    if (options.replace) {
+      replaceBrowserHome();
+    } else {
+      pushBrowserHome();
     }
   }
 
@@ -472,20 +533,14 @@ function App() {
     function syncFromHistory() {
       const routeId = noteIdFromPathname();
       if (!routeId) {
-        const fallbackId = index.notes[0]?.id;
-        if (fallbackId) {
-          selectNote(fallbackId, { replace: true });
-        }
+        setSelectedId("");
         return;
       }
       if (index.notes.some((note) => note.id === routeId)) {
         setSelectedId(routeId);
         return;
       }
-      const fallbackId = index.notes[0]?.id;
-      if (fallbackId) {
-        selectNote(fallbackId, { replace: true });
-      }
+      selectHome({ replace: true });
     }
 
     window.addEventListener("popstate", syncFromHistory);
@@ -511,7 +566,7 @@ function App() {
   }, [selectedId]);
 
   useEffect(() => {
-    document.title = selected ? `${selected.title} | Wiki` : "Wiki";
+    document.title = selected ? `${selected.title} | Wiki` : "Wiki Home | Wiki";
   }, [selected]);
 
   useEffect(() => {
@@ -550,6 +605,22 @@ function App() {
 
   const notesById = useMemo(() => new Map(index.notes.map((note) => [note.id, note])), [index.notes]);
   const folderTree = useMemo(() => buildFolderTree(index.folders), [index.folders]);
+  const recentNotes = useMemo(() => [...index.notes].sort(compareUpdatedAtDesc).slice(0, 12), [index.notes]);
+  const recentFolders = useMemo(() => {
+    const folders = new Map<string, RecentFolder>();
+    for (const note of index.notes) {
+      const current = folders.get(note.folder);
+      if (!current || compareUpdatedAtDesc(note, current) < 0) {
+        folders.set(note.folder, {
+          path: note.folder,
+          count: index.folders.find((folder) => folder.path === note.folder)?.count ?? 1,
+          updatedAt: note.updatedAt
+        });
+      }
+    }
+    return [...folders.values()].sort(compareUpdatedAtDesc).slice(0, 8);
+  }, [index.folders, index.notes]);
+  const topTags = useMemo(() => [...index.tags].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja")).slice(0, 12), [index.tags]);
 
   const visibleBody = selected
     ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes, selected.id), selected))
@@ -626,6 +697,15 @@ function App() {
             <span>{dataMode === "public" ? "Public site" : `${index.notes.length} notes`}</span>
           </div>
         </div>
+
+        <button className={!selectedId ? "filter active" : "filter"} onClick={() => selectHome()}>
+          <span className="folderLabel">
+            <span className="folderToggle">
+              <Home size={14} />
+            </span>
+            <span className="folderName">Home</span>
+          </span>
+        </button>
 
         <label className="searchBox">
           <Search size={16} />
@@ -778,7 +858,16 @@ function App() {
             </article>
           </>
         ) : (
-          <div className="emptyState">{dataMode === "public" ? "No public note selected." : "Create a note in the vault to start."}</div>
+          <HomeView
+            index={index}
+            dataMode={dataMode}
+            recentNotes={recentNotes}
+            recentFolders={recentFolders}
+            topTags={topTags}
+            onSelectNote={selectNote}
+            onSelectFolder={setActiveFolder}
+            onSelectTag={setActiveTag}
+          />
         )}
       </main>
 
@@ -841,11 +930,184 @@ function App() {
           </>
         ) : (
           <section className="emptyInspector">
-            <Shield size={20} />
-            No note selected
+            <Home size={20} />
+            Home
           </section>
         )}
       </aside>
+    </div>
+  );
+}
+
+function HomeView({
+  index,
+  dataMode,
+  recentNotes,
+  recentFolders,
+  topTags,
+  onSelectNote,
+  onSelectFolder,
+  onSelectTag
+}: {
+  index: WikiIndex;
+  dataMode: DataMode;
+  recentNotes: NoteSummary[];
+  recentFolders: RecentFolder[];
+  topTags: Array<{ name: string; count: number }>;
+  onSelectNote: (id: string) => void;
+  onSelectFolder: (folder: string) => void;
+  onSelectTag: (tag: string) => void;
+}) {
+  const latestUpdate = recentNotes[0]?.updatedAt;
+  const notesWithCovers = recentNotes.filter((note) => coverUrl(note)).slice(0, 3);
+
+  return (
+    <div className="homeView">
+      <header className="homeHeader">
+        <div>
+          <span className="kicker">{dataMode === "public" ? "Read-only public site" : "Local workspace"}</span>
+          <h1>Recent updates</h1>
+          <p>Latest notes from the current wiki index, ordered by file update time.</p>
+        </div>
+        <div className="homeStats" aria-label="Wiki overview">
+          <span>
+            <strong>{index.notes.length}</strong>
+            Notes
+          </span>
+          <span>
+            <strong>{index.folders.length}</strong>
+            Folders
+          </span>
+          <span>
+            <strong>{index.tags.length}</strong>
+            Tags
+          </span>
+          <span>
+            <strong>{formatUpdatedDate(latestUpdate)}</strong>
+            Last update
+          </span>
+        </div>
+      </header>
+
+      <div className="homeGrid">
+        <section className="homeMain">
+          <div className="homeSectionHeader">
+            <div>
+              <CalendarClock size={16} />
+              <h2>Recently Updated</h2>
+            </div>
+            <span>{recentNotes.length} shown</span>
+          </div>
+
+          <div className="recentList">
+            {recentNotes.length === 0 ? (
+              <div className="emptyState compact">Create a note in the vault to start.</div>
+            ) : (
+              recentNotes.map((note) => {
+                const noteCoverUrl = coverUrl(note);
+                return (
+                  <button key={note.id} className={noteCoverUrl ? "recentItem withCover" : "recentItem"} onClick={() => onSelectNote(note.id)}>
+                    {noteCoverUrl && <img className="recentCover" src={noteCoverUrl} alt="" />}
+                    <span className="recentBody">
+                      <span className="recentMeta">
+                        <time dateTime={note.updatedAt}>{formatUpdatedDate(note.updatedAt)}</time>
+                        <span>{folderLabel(note.folder)}</span>
+                      </span>
+                      <strong>{note.title}</strong>
+                      <span className="recentExcerpt">{note.excerpt || "No body text"}</span>
+                      {note.tags.length > 0 && (
+                        <span className="recentTags">
+                          {note.tags.slice(0, 4).map((tag) => (
+                            <em key={tag}>#{tag}</em>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        <aside className="homeAside">
+          {notesWithCovers.length > 0 && (
+            <section>
+              <div className="homeSectionHeader">
+                <div>
+                  <Image size={16} />
+                  <h2>With Media</h2>
+                </div>
+              </div>
+              <div className="coverList">
+                {notesWithCovers.map((note) => (
+                  <button key={note.id} className="coverItem" onClick={() => onSelectNote(note.id)}>
+                    <img src={coverUrl(note)} alt="" />
+                    <span>
+                      <strong>{note.title}</strong>
+                      <em>{formatUpdatedDate(note.updatedAt)}</em>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="homeSectionHeader">
+              <div>
+                <Folder size={16} />
+                <h2>Active Folders</h2>
+              </div>
+            </div>
+            <div className="summaryList">
+              {recentFolders.map((folder) => (
+                <button key={folder.path || "root"} onClick={() => onSelectFolder(folder.path)}>
+                  <span>
+                    <strong>{folderLabel(folder.path)}</strong>
+                    <em>{formatUpdatedDate(folder.updatedAt)}</em>
+                  </span>
+                  <b>{folder.count}</b>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="homeSectionHeader">
+              <div>
+                <Tag size={16} />
+                <h2>Top Tags</h2>
+              </div>
+            </div>
+            <div className="homeTagList">
+              {topTags.map((tag) => (
+                <button key={tag.name} onClick={() => onSelectTag(tag.name)}>
+                  #{tag.name}
+                  <span>{tag.count}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="homeSectionHeader">
+              <div>
+                <FileText size={16} />
+                <h2>Index Health</h2>
+              </div>
+            </div>
+            <div className="healthRows">
+              <span>
+                Broken links <strong>{index.brokenLinks.length}</strong>
+              </span>
+              <span>
+                Media warnings <strong>{index.mediaWarnings.length}</strong>
+              </span>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }
