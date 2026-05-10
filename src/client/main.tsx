@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import {
   BookOpen,
   Image,
@@ -19,6 +19,7 @@ import {
   Tag
 } from "lucide-react";
 import type { NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
+import { parseLinkCardHref, renderLinkCardDirectives, type LinkCardData } from "./linkCards.js";
 import { buildPlantUmlSvgUrl, isPlantUmlLanguage } from "./plantuml.js";
 import "./styles.css";
 
@@ -141,6 +142,32 @@ function singleChildYoutubeEmbed(children: React.ReactNode) {
   return typeof props.href === "string" ? youtubeEmbedUrl(props.href) : undefined;
 }
 
+function singleChildLinkCard(children: React.ReactNode) {
+  const nodes = React.Children.toArray(children).filter((child) => {
+    return typeof child !== "string" || child.trim().length > 0;
+  });
+
+  if (nodes.length !== 1) {
+    return undefined;
+  }
+
+  const [child] = nodes;
+  if (!React.isValidElement(child)) {
+    return undefined;
+  }
+
+  const props = child.props as { href?: unknown; children?: React.ReactNode };
+  const card = typeof props.href === "string" ? parseLinkCardHref(props.href) : undefined;
+  if (!card) {
+    return undefined;
+  }
+
+  return {
+    ...card,
+    label: codeBlockText(props.children) || card.url
+  };
+}
+
 function codeBlockText(children: React.ReactNode) {
   return React.Children.toArray(children)
     .map((child) => (typeof child === "string" || typeof child === "number" ? String(child) : ""))
@@ -186,6 +213,16 @@ function MarkdownPre({ children, ...props }: React.ComponentPropsWithoutRef<"pre
   }
 
   return <pre {...props}>{children}</pre>;
+}
+
+function LinkCard({ card }: { card: LinkCardData }) {
+  return (
+    <a className="linkCard" href={card.url} target="_blank" rel="noreferrer">
+      <span className="linkCardMeta">{card.host}</span>
+      <strong>{card.label}</strong>
+      <span className="linkCardUrl">{card.url}</span>
+    </a>
+  );
 }
 
 function normalizeWikiTarget(target: string) {
@@ -284,6 +321,10 @@ function renderMediaLinks(body: string, note: NoteDetail) {
     const media = note.media.find((item) => item.source === source || item.path === source);
     return media?.url ? `${prefix}${media.url}${suffix}` : `${prefix}${source}${suffix}`;
   });
+}
+
+function markdownUrlTransform(url: string) {
+  return parseLinkCardHref(url) ? url : defaultUrlTransform(url);
 }
 
 function coverUrl(note: NoteSummary) {
@@ -510,7 +551,9 @@ function App() {
   const notesById = useMemo(() => new Map(index.notes.map((note) => [note.id, note])), [index.notes]);
   const folderTree = useMemo(() => buildFolderTree(index.folders), [index.folders]);
 
-  const visibleBody = selected ? renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes, selected.id), selected) : "";
+  const visibleBody = selected
+    ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes, selected.id), selected))
+    : "";
 
   function selectFolder(node: FolderTreeNode) {
     setActiveFolder(node.path);
@@ -663,9 +706,14 @@ function App() {
 
             <article className={selected.tags.includes("レシピ") ? "markdown recipeMarkdown" : "markdown"}>
               <ReactMarkdown
+                urlTransform={markdownUrlTransform}
                 components={{
                   pre: MarkdownPre,
                   p: ({ children }) => {
+                    const linkCard = singleChildLinkCard(children);
+                    if (linkCard) {
+                      return <LinkCard card={linkCard} />;
+                    }
                     const embedUrl = singleChildYoutubeEmbed(children);
                     if (embedUrl) {
                       return (
@@ -683,6 +731,14 @@ function App() {
                     return <p>{children}</p>;
                   },
                   a: ({ href, children }) => {
+                    const card = parseLinkCardHref(href);
+                    if (card) {
+                      return (
+                        <a href={card.url} target="_blank" rel="noreferrer">
+                          {children}
+                        </a>
+                      );
+                    }
                     if (href?.startsWith("/note/")) {
                       const target = noteIdFromPathname(href);
                       return (

@@ -165,6 +165,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return body
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/^::link-card\[([^\]\n]+)\]\([^)]+\)\s*$/gm, "$1")
       .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, label?: string) => label ?? target)
       .replace(/[#>*_`[\]()]/g, " ")
       .replace(/\s+/g, " ")
