@@ -14,7 +14,6 @@
     "extension:test": "npm --prefix extensions/secret-wiki-tags run test",
     "extension:package": "npm --prefix extensions/secret-wiki-tags run package",
     "mcp": "tsx src/mcp/server.ts",
-    "index:generate": "tsx src/scripts/generateIndexes.ts",
     "export:public": "tsx src/scripts/exportPublic.ts"
   },
   "dependencies": {

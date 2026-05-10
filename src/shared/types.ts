@@ -66,7 +66,3 @@ export type PublicExportResult = {
   media: string[];
   warnings: Array<{ note: string; target: string; reason: string }>;
 };
-
-export type GenerateIndexInput = {
-  folder: string;
-};
