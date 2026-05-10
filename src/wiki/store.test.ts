@@ -33,6 +33,10 @@ async function runGit(root: string, args: string[], env: Record<string, string> 
   });
 }
 
+function pathToFileUrl(filePath: string) {
+  return `file:///${filePath.replace(/\\/g, "/")}`;
+}
+
 describe("wiki store", () => {
   test("frontmatter defaults keep notes private from LLM", async () => {
     const store = await withStore({
@@ -82,6 +86,38 @@ describe("wiki store", () => {
 
     expect(tracked?.updatedAt).toBe(newerDate);
     expect(untracked?.updatedAt).toBe(fallbackUpdatedAt);
+  });
+
+  test("unshallows git history before reading tracked markdown dates", async () => {
+    const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-source-"));
+    const cloneParent = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-clone-"));
+    const shallowRoot = path.join(cloneParent, "repo");
+    const noteDate = "2024-03-04T05:06:07+09:00";
+    const headDate = "2024-04-05T06:07:08+09:00";
+
+    await runGit(sourceRoot, ["init"]);
+    await runGit(sourceRoot, ["config", "user.email", "secret-wiki@example.test"]);
+    await runGit(sourceRoot, ["config", "user.name", "Secret Wiki Test"]);
+    await writeVaultFile(sourceRoot, "tracked.md", "---\ntitle: Tracked\n---\nInitial body.");
+    await runGit(sourceRoot, ["add", "vault/tracked.md"]);
+    await runGit(sourceRoot, ["commit", "-m", "Add tracked note"], {
+      GIT_AUTHOR_DATE: noteDate,
+      GIT_COMMITTER_DATE: noteDate
+    });
+    await fs.writeFile(path.join(sourceRoot, "README.md"), "# Readme\n", "utf8");
+    await runGit(sourceRoot, ["add", "README.md"]);
+    await runGit(sourceRoot, ["commit", "-m", "Update readme"], {
+      GIT_AUTHOR_DATE: headDate,
+      GIT_COMMITTER_DATE: headDate
+    });
+    await execFileAsync("git", ["clone", "--depth", "1", pathToFileUrl(sourceRoot), shallowRoot]);
+
+    const store = createWikiStore({ rootDir: shallowRoot });
+    const index = await store.buildIndex();
+    const tracked = index.notes.find((note) => note.id === "tracked");
+
+    expect(tracked?.updatedAt).toBe(noteDate);
+    expect(tracked?.updatedAt).not.toBe(headDate);
   });
 
   test("search can be restricted to llm_access notes", async () => {
