@@ -30,6 +30,12 @@ llm_access: false
 
 Unset `llm_access` values are treated as `false`. This flag controls MCP visibility only.
 
+## MCP Access Model
+
+The MCP server can search and read only notes with `llm_access: true`.
+It can update only existing notes that already have `llm_access: true`, and MCP updates cannot change `llm_access`.
+It can create new notes, including with `llm_access: true` when explicitly requested.
+
 ## Static Export
 
 `npm run build:public` builds the client and exports the current `vault/` contents into `exports/public`.

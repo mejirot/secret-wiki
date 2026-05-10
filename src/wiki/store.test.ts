@@ -167,4 +167,48 @@ describe("wiki store", () => {
     expect(updated?.path).toBe("inbox/captured/index.md");
     expect(updated?.body).toBe("Updated body\n");
   });
+
+  test("LLM update only allows notes already available to LLM", async () => {
+    const store = await withStore({
+      "public.md": "---\ntitle: Public\ntags: [open]\nllm_access: true\n---\nVisible body",
+      "private.md": "---\ntitle: Private\ntags: [closed]\n---\nPrivate body"
+    });
+
+    await expect(
+      store.updateLlmAccessibleNote({
+        id: "private",
+        body: "Attempted update"
+      })
+    ).rejects.toThrow("Note not found or not available to LLM");
+
+    const updated = await store.updateLlmAccessibleNote({
+      id: "public",
+      title: "Updated Public",
+      tags: ["open", "edited"],
+      body: "Updated visible body"
+    });
+    expect(updated?.title).toBe("Updated Public");
+    expect(updated?.tags).toEqual(["open", "edited"]);
+    expect(updated?.body).toBe("Updated visible body\n");
+    expect(updated?.llm_access).toBe(true);
+
+    const privateNote = await store.getNote("private");
+    expect(privateNote?.body).toBe("Private body");
+    expect(privateNote?.llm_access).toBe(false);
+  });
+
+  test("LLM update cannot change llm_access even if provided at runtime", async () => {
+    const store = await withStore({
+      "public.md": "---\ntitle: Public\nllm_access: true\n---\nVisible body"
+    });
+
+    const updated = await store.updateLlmAccessibleNote({
+      id: "public",
+      body: "Still visible",
+      llm_access: false
+    } as Parameters<typeof store.updateLlmAccessibleNote>[0] & { llm_access: boolean });
+
+    expect(updated?.body).toBe("Still visible\n");
+    expect(updated?.llm_access).toBe(true);
+  });
 });

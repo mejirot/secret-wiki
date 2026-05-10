@@ -83,17 +83,23 @@ server.tool(
 
 server.tool(
   "update_note",
-  "Update an existing note.",
+  "Update an existing note only when llm_access is true. This cannot change llm_access.",
   {
     id: z.string(),
     title: z.string().optional(),
     body: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    llm_access: z.boolean().optional()
+    tags: z.array(z.string()).optional()
   },
   async (input) => {
-    const note = await store.updateNote(input);
-    return asText(note);
+    try {
+      const note = await store.updateLlmAccessibleNote(input);
+      return asText(note);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Note not found or not available to LLM") {
+        return asText({ error: error.message });
+      }
+      throw error;
+    }
   }
 );
 
