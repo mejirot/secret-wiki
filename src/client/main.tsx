@@ -14,7 +14,6 @@ import {
   Home,
   Link2,
   Lock,
-  RefreshCcw,
   Search,
   Send,
   Shield,
@@ -31,7 +30,6 @@ const forcedPublicMode = import.meta.env.VITE_SECRET_WIKI_MODE === "public";
 const plantUmlServerUrl = import.meta.env.VITE_PLANTUML_SERVER_URL;
 
 const emptyIndex: WikiIndex = { notes: [], tags: [], folders: [], brokenLinks: [], mediaWarnings: [] };
-const internalMarkerPattern = /<!--\s*secret-wiki:auto-index\s*-->/g;
 
 type FolderTreeNode = {
   path: string;
@@ -503,15 +501,6 @@ function App() {
     }
   }
 
-  async function refreshGeneratedIndexes() {
-    await fetch("/api/indexes/regenerate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
-    });
-    await loadIndex();
-  }
-
   useEffect(() => {
     let cancelled = false;
     async function loadWithRetry(remaining = 5) {
@@ -623,7 +612,7 @@ function App() {
   const topTags = useMemo(() => [...index.tags].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja")).slice(0, 12), [index.tags]);
 
   const visibleBody = selected
-    ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body.replace(internalMarkerPattern, ""), index.notes, selected.id), selected))
+    ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body, index.notes, selected.id), selected))
     : "";
 
   function selectFolder(node: FolderTreeNode) {
@@ -739,11 +728,6 @@ function App() {
       <section className="listPane">
         <div className="paneHeader">
           <span>{filteredNotes.length} results</span>
-          {dataMode === "local" && (
-            <button className="iconOnly" title="Refresh indexes" onClick={() => void refreshGeneratedIndexes()}>
-              <RefreshCcw size={16} />
-            </button>
-          )}
         </div>
         <div className="noteList">
           {filteredNotes.map((note) => (
