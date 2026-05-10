@@ -49,6 +49,16 @@ describe("wiki store", () => {
     expect(b?.backlinks).toEqual(["a"]);
   });
 
+  test("link card directives use their label in note excerpts", async () => {
+    const store = await withStore({
+      "card.md": "---\ntitle: Card\n---\n::link-card[Example Site](https://example.com)\n\nBody text."
+    });
+
+    const card = await store.getNote("card");
+    expect(card?.excerpt).toContain("Example Site");
+    expect(card?.excerpt).not.toContain("::link-card");
+  });
+
   test("page bundle index.md files use the folder as their canonical note id", async () => {
     const store = await withStore({
       "flat.md": "---\ntitle: Flat\n---\nFlat note.",
