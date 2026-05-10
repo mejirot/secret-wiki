@@ -29,6 +29,8 @@ type ParsedNote = {
   mtime: Date;
 };
 
+type LlmAccessibleUpdateNoteInput = Omit<UpdateNoteInput, "llm_access">;
+
 const INTERNAL_EXPORT_KEYS = new Set(["llm_access"]);
 const IGNORED_FRONTMATTER_KEYS = new Set(["publish"]);
 const AUTO_INDEX_MARKER = "<!-- secret-wiki:auto-index -->";
@@ -448,6 +450,15 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return getNote(current.id);
   }
 
+  async function updateLlmAccessibleNote(input: LlmAccessibleUpdateNoteInput) {
+    const current = await getNote(input.id, true);
+    if (!current) {
+      throw new Error("Note not found or not available to LLM");
+    }
+    const { id, title, tags, body } = input;
+    return updateNote({ id, title, tags, body });
+  }
+
   async function createNote(input: CreateNoteInput) {
     const absolutePath = safePathFromCreateInput(input.path);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
@@ -642,6 +653,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     searchNotes,
     createNote,
     updateNote,
+    updateLlmAccessibleNote,
     resolveMediaFile,
     generateFolderIndex,
     generateFolderIndexes,
