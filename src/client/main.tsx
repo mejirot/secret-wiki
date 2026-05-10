@@ -698,13 +698,9 @@ function App() {
           </div>
         </div>
 
-        <button className={!selectedId ? "filter active" : "filter"} onClick={() => selectHome()}>
-          <span className="folderLabel">
-            <span className="folderToggle">
-              <Home size={14} />
-            </span>
-            <span className="folderName">Home</span>
-          </span>
+        <button className={!selectedId ? "filter homeFilter active" : "filter homeFilter"} onClick={() => selectHome()}>
+          <Home size={14} />
+          <span>Home</span>
         </button>
 
         <label className="searchBox">
