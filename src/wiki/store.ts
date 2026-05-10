@@ -3,7 +3,6 @@ import path from "node:path";
 import matter from "gray-matter";
 import type {
   CreateNoteInput,
-  GenerateIndexInput,
   NoteMedia,
   NoteDetail,
   NoteSummary,
@@ -31,8 +30,6 @@ type ParsedNote = {
 
 const INTERNAL_EXPORT_KEYS = new Set(["llm_access"]);
 const IGNORED_FRONTMATTER_KEYS = new Set(["publish"]);
-const AUTO_INDEX_MARKER = "<!-- secret-wiki:auto-index -->";
-const DEFAULT_INDEX_FOLDERS = ["boardgame"];
 
 export function createWikiStore(options: WikiStoreOptions = {}) {
   const rootDir = path.resolve(options.rootDir ?? process.cwd());
@@ -177,10 +174,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return typeof note.frontmatter.cover === "string" && note.frontmatter.cover.trim()
       ? note.frontmatter.cover.trim()
       : undefined;
-  }
-
-  function isAutoIndex(note: ParsedNote | NoteDetail) {
-    return note.frontmatter.auto_index === true || note.body.includes(AUTO_INDEX_MARKER);
   }
 
   function isExternalTarget(target: string) {
@@ -490,99 +483,11 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return resolved.absolutePath;
   }
 
-  function displayFolderTitle(folder: string) {
-    return folder
-      .split("/")
-      .filter(Boolean)
-      .map((part) => part.replace(/[-_]+/g, " "))
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" / ");
-  }
-
-  function renderGeneratedIndex(folder: string, notes: NoteSummary[], previous?: NoteDetail) {
-    function coverPathForIndex(note: NoteSummary) {
-      if (!note.cover) {
-        return "";
-      }
-      const media = note.media.find((item) => item.source === note.cover || item.path === note.cover);
-      if (!media) {
-        return note.cover;
-      }
-      const noteBase = path.posix.dirname(note.path) === "." ? "" : path.posix.dirname(note.path);
-      return path.posix.relative(folder, path.posix.join(noteBase, media.path)).replace(/\\/g, "/");
-    }
-
-    const lines = [
-      AUTO_INDEX_MARKER,
-      "",
-      `# ${previous?.title ?? displayFolderTitle(folder)}`,
-      "",
-      ...notes.flatMap((note) => {
-        const tags = note.tags.length > 0 ? ` ${note.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-        const updated = note.updatedAt.slice(0, 10);
-        const indexCover = coverPathForIndex(note);
-        const cover = indexCover ? `![cover](${indexCover}) ` : "";
-        const excerpt = note.excerpt ? `\n  ${note.excerpt}` : "";
-        return [`- ${cover}[[${note.id}|${note.title}]]${tags} (${updated})${excerpt}`];
-      }),
-      ""
-    ];
-    return lines.join("\n");
-  }
-
-  async function generateFolderIndex(input: GenerateIndexInput) {
-    const folder = normalizeId(input.folder);
-    if (!folder || folder.includes("..")) {
-      throw new Error(`Invalid index folder: ${input.folder}`);
-    }
-    const targetRelative = `${folder}/index.md`;
-    const targetPath = safeVaultPath(targetRelative);
-    const existing = await getNote(folder);
-    if (existing && !isAutoIndex(existing)) {
-      throw new Error(`Refusing to overwrite non-generated index: ${targetRelative}`);
-    }
-
-    const { index, details } = await buildIndex();
-    const notes = index.notes.filter((note) => {
-      if (note.id === folder || !note.id.startsWith(`${folder}/`)) {
-        return false;
-      }
-      const detail = details.get(note.id);
-      return detail ? !isAutoIndex(detail) : true;
-    });
-    if (notes.length === 0 && !existing) {
-      return undefined;
-    }
-    const body = renderGeneratedIndex(folder, notes, existing);
-    const frontmatter = {
-      title: existing?.title ?? displayFolderTitle(folder),
-      tags: existing?.tags ?? [folder],
-      llm_access: notes.length > 0 && notes.every((note) => note.llm_access),
-      auto_index: true
-    };
-
-    await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(targetPath, noteToMarkdown(frontmatter, body), "utf8");
-    return getNote(folder);
-  }
-
-  async function generateFolderIndexes(folders = DEFAULT_INDEX_FOLDERS) {
-    const generated = [];
-    for (const folder of folders) {
-      const note = await generateFolderIndex({ folder });
-      if (note) {
-        generated.push(note.id);
-      }
-    }
-    return { generated };
-  }
-
   function exportedNoteFileName(id: string) {
     return `${encodeURIComponent(id).replace(/%/g, "~")}.json`;
   }
 
   async function exportPublicSite(): Promise<PublicExportResult> {
-    await generateFolderIndexes();
     const { index, details } = await buildIndex();
     await fs.rm(exportDir, { recursive: true, force: true });
     await fs.mkdir(exportDir, { recursive: true });
@@ -644,8 +549,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     createNote,
     updateNote,
     resolveMediaFile,
-    generateFolderIndex,
-    generateFolderIndexes,
     exportPublicSite
   };
 }
