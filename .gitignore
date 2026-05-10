@@ -20,3 +20,8 @@ vault/*
 vault/boardgame/*
 !vault/boardgame/coffee_rush.md
 !vault/boardgame/coffee_rush/
+!vault/ai/
+vault/ai/*
+!vault/ai/design/
+vault/ai/design/*
+!vault/ai/design/pencil.md
