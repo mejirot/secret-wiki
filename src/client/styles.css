@@ -396,6 +396,39 @@ button {
   border: 0;
 }
 
+.linkCard {
+  display: grid;
+  gap: 5px;
+  width: min(100%, 680px);
+  margin: 20px 0;
+  border: 1px solid #dedbd1;
+  border-radius: 8px;
+  background: #fbfaf5;
+  padding: 14px 16px;
+  color: #17211c;
+  text-decoration: none;
+}
+
+.linkCard:hover {
+  border-color: #b9c8b5;
+  background: #f4f7ef;
+}
+
+.linkCardMeta,
+.linkCardUrl {
+  color: #68736b;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.linkCard strong {
+  color: #103426;
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .markdown.recipeMarkdown {
   max-width: 780px;
   padding-top: 24px;
