@@ -19,10 +19,12 @@ import {
   Tag
 } from "lucide-react";
 import type { NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
+import { buildPlantUmlSvgUrl, isPlantUmlLanguage } from "./plantuml.js";
 import "./styles.css";
 
 type DataMode = "local" | "public";
 const forcedPublicMode = import.meta.env.VITE_SECRET_WIKI_MODE === "public";
+const plantUmlServerUrl = import.meta.env.VITE_PLANTUML_SERVER_URL;
 
 const emptyIndex: WikiIndex = { notes: [], tags: [], folders: [], brokenLinks: [], mediaWarnings: [] };
 const internalMarkerPattern = /<!--\s*secret-wiki:auto-index\s*-->/g;
@@ -137,6 +139,53 @@ function singleChildYoutubeEmbed(children: React.ReactNode) {
 
   const props = child.props as { href?: unknown };
   return typeof props.href === "string" ? youtubeEmbedUrl(props.href) : undefined;
+}
+
+function codeBlockText(children: React.ReactNode) {
+  return React.Children.toArray(children)
+    .map((child) => (typeof child === "string" || typeof child === "number" ? String(child) : ""))
+    .join("")
+    .replace(/\n$/, "");
+}
+
+function PlantUmlDiagram({ source }: { source: string }) {
+  const imageUrl = useMemo(() => buildPlantUmlSvgUrl(source, plantUmlServerUrl), [source]);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [imageUrl]);
+
+  if (hasError) {
+    return (
+      <figure className="plantUmlDiagram plantUmlDiagramError">
+        <figcaption>PlantUML diagram could not be loaded.</figcaption>
+        <pre>
+          <code>{source}</code>
+        </pre>
+      </figure>
+    );
+  }
+
+  return (
+    <figure className="plantUmlDiagram">
+      <img src={imageUrl} alt="PlantUML diagram" loading="lazy" onError={() => setHasError(true)} />
+    </figure>
+  );
+}
+
+function MarkdownPre({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) {
+  const childNodes = React.Children.toArray(children);
+  const [firstChild] = childNodes;
+
+  if (childNodes.length === 1 && React.isValidElement<{ className?: string; children?: React.ReactNode }>(firstChild)) {
+    const codeClassName = firstChild.props.className;
+    if (isPlantUmlLanguage(codeClassName)) {
+      return <PlantUmlDiagram source={codeBlockText(firstChild.props.children)} />;
+    }
+  }
+
+  return <pre {...props}>{children}</pre>;
 }
 
 function normalizeWikiTarget(target: string) {
@@ -615,6 +664,7 @@ function App() {
             <article className={selected.tags.includes("レシピ") ? "markdown recipeMarkdown" : "markdown"}>
               <ReactMarkdown
                 components={{
+                  pre: MarkdownPre,
                   p: ({ children }) => {
                     const embedUrl = singleChildYoutubeEmbed(children);
                     if (embedUrl) {
