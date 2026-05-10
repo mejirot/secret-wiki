@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import matter from "gray-matter";
 import type {
   CreateNoteInput,
@@ -25,13 +27,15 @@ type ParsedNote = {
   noteDir: string;
   body: string;
   frontmatter: Record<string, unknown>;
-  mtime: Date;
 };
 
 type LlmAccessibleUpdateNoteInput = Omit<UpdateNoteInput, "llm_access">;
 
 const INTERNAL_EXPORT_KEYS = new Set(["llm_access"]);
 const IGNORED_FRONTMATTER_KEYS = new Set(["publish"]);
+const GIT_UPDATED_AT_FALLBACK = "2026-05-10T00:00:00+09:00";
+const gitCommitDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const execFileAsync = promisify(execFile);
 
 export function createWikiStore(options: WikiStoreOptions = {}) {
   const rootDir = path.resolve(options.rootDir ?? process.cwd());
@@ -119,7 +123,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
       files.map(async (absolutePath) => {
         const raw = await fs.readFile(absolutePath, "utf8");
         const parsed = matter(raw);
-        const stat = await fs.stat(absolutePath);
         const relativePath = path.relative(vaultDir, absolutePath).replace(/\\/g, "/");
         return {
           id: canonicalIdFromRelativePath(relativePath),
@@ -127,11 +130,64 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
           relativePath,
           noteDir: noteDirFromRelativePath(relativePath),
           body: parsed.content.trimStart(),
-          frontmatter: parsed.data,
-          mtime: stat.mtime
+          frontmatter: parsed.data
         };
       })
     );
+  }
+
+  function gitVaultPathspec() {
+    const relative = path.relative(rootDir, vaultDir).replace(/\\/g, "/");
+    if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+      return undefined;
+    }
+    return relative;
+  }
+
+  function parseGitUpdatedAtLog(output: string, vaultPathspec: string) {
+    const updatedAtByPath = new Map<string, string>();
+    let currentDate: string | undefined;
+    for (const rawLine of output.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+      if (gitCommitDatePattern.test(line)) {
+        currentDate = line;
+        continue;
+      }
+      if (!currentDate || !line.toLowerCase().endsWith(".md")) {
+        continue;
+      }
+      const normalized = line.replace(/\\/g, "/");
+      const relativePath = normalized.startsWith(`${vaultPathspec}/`)
+        ? normalized.slice(vaultPathspec.length + 1)
+        : normalized;
+      if (!updatedAtByPath.has(relativePath)) {
+        updatedAtByPath.set(relativePath, currentDate);
+      }
+    }
+    return updatedAtByPath;
+  }
+
+  async function readGitUpdatedAtByPath() {
+    const vaultPathspec = gitVaultPathspec();
+    if (!vaultPathspec) {
+      return new Map<string, string>();
+    }
+    try {
+      const { stdout } = await execFileAsync("git", ["log", "--format=%cI", "--name-only", "--", vaultPathspec], {
+        cwd: rootDir,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      return parseGitUpdatedAtLog(stdout, vaultPathspec);
+    } catch {
+      return new Map<string, string>();
+    }
+  }
+
+  function updatedAtFor(note: ParsedNote, gitUpdatedAtByPath: Map<string, string>) {
+    return gitUpdatedAtByPath.get(note.relativePath) ?? GIT_UPDATED_AT_FALLBACK;
   }
 
   function titleFor(note: ParsedNote) {
@@ -304,6 +360,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
 
   async function buildIndex(): Promise<{ index: WikiIndex; details: Map<string, NoteDetail> }> {
     const parsedNotes = await readParsedNotes();
+    const gitUpdatedAtByPath = await readGitUpdatedAtByPath();
     const notesById = new Map(parsedNotes.map((note) => [note.id, note]));
     const linkData = new Map(parsedNotes.map((note) => [note.id, extractLinks(note, notesById)]));
     const backlinks = new Map<string, Set<string>>();
@@ -334,7 +391,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
             media: mediaData.media,
             brokenMedia: mediaData.brokenMedia,
             excerpt: excerptFor(note.body),
-            updatedAt: note.mtime.toISOString(),
+            updatedAt: updatedAtFor(note, gitUpdatedAtByPath),
             outgoing: links.outgoing,
             backlinks: [...(backlinks.get(note.id) ?? new Set<string>())].sort(),
             brokenLinks: links.brokenLinks,

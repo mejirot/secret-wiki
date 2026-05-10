@@ -947,7 +947,7 @@ function HomeView({
         <div>
           <span className="kicker">{dataMode === "public" ? "Read-only public site" : "Local workspace"}</span>
           <h1>Recent updates</h1>
-          <p>Latest notes from the current wiki index, ordered by file update time.</p>
+          <p>Latest notes from the current wiki index, ordered by git commit time.</p>
         </div>
         <div className="homeStats" aria-label="Wiki overview">
           <span>
