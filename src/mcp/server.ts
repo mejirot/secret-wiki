@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { repoRoot } from "../shared/repoRoot.js";
 import { createWikiStore } from "../wiki/store.js";
 
-const store = createWikiStore();
+const store = createWikiStore({ rootDir: repoRoot });
 const server = new McpServer({
   name: "secret-wiki",
   version: "0.1.0"
