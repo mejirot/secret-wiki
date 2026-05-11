@@ -1,12 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { repoRoot } from "../shared/repoRoot.js";
 import type { NoteDetail, NoteMedia } from "../shared/types.js";
 import { createWikiStore } from "../wiki/store.js";
 
 const defaultPublicOrigin = "https://wiki.mejilab.com";
 const publicOrigin = (process.env.SECRET_WIKI_PUBLIC_ORIGIN ?? defaultPublicOrigin).replace(/\/+$/, "");
 
-const store = createWikiStore();
+const store = createWikiStore({ rootDir: repoRoot });
 const result = await store.exportPublicSite();
 const clientBuildDir = path.join(store.rootDir, "dist", "client");
 

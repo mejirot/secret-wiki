@@ -1,12 +1,13 @@
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { repoRoot } from "../shared/repoRoot.js";
 import { createWikiStore } from "../wiki/store.js";
 import type { CreateNoteInput, SearchFilters, UpdateNoteInput } from "../shared/types.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
-const store = createWikiStore();
+const store = createWikiStore({ rootDir: repoRoot });
 
 app.use(express.json({ limit: "2mb" }));
 
