@@ -13,7 +13,6 @@ Secret Wiki is a local-first Markdown wiki with a React web UI, controlled LLM a
 - `npm run extension:build`: compile the Secret Wiki Tags VS Code extension
 - `npm run extension:test`: run the Secret Wiki Tags extension tests
 - `npm run mcp`: start the MCP server over stdio
-- `npm run index:generate`: generate configured folder indexes
 - `npm run export:public`: export notes and media into `exports/public/data`
 
 ## Vault Format

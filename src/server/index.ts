@@ -64,14 +64,6 @@ app.get(
 );
 
 app.post(
-  "/api/indexes/regenerate",
-  asyncRoute(async (req, res) => {
-    const folders = Array.isArray(req.body?.folders) ? req.body.folders.map(String) : undefined;
-    res.json(await store.generateFolderIndexes(folders));
-  })
-);
-
-app.post(
   "/api/notes",
   asyncRoute(async (req, res) => {
     const input = req.body as CreateNoteInput;

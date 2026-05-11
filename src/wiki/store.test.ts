@@ -1,8 +1,13 @@
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
 import { createWikiStore } from "./store.js";
+
+const execFileAsync = promisify(execFile);
+const fallbackUpdatedAt = "2026-05-10T00:00:00+09:00";
 
 async function withStore(files: Record<string, string>) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-"));
@@ -15,6 +20,23 @@ async function withStore(files: Record<string, string>) {
   return createWikiStore({ rootDir: root });
 }
 
+async function writeVaultFile(root: string, relative: string, content: string) {
+  const target = path.join(root, "vault", relative);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content, "utf8");
+}
+
+async function runGit(root: string, args: string[], env: Record<string, string> = {}) {
+  await execFileAsync("git", args, {
+    cwd: root,
+    env: { ...process.env, ...env }
+  });
+}
+
+function pathToFileUrl(filePath: string) {
+  return `file:///${filePath.replace(/\\/g, "/")}`;
+}
+
 describe("wiki store", () => {
   test("frontmatter defaults keep notes private from LLM", async () => {
     const store = await withStore({
@@ -24,6 +46,78 @@ describe("wiki store", () => {
     const index = await store.buildIndex();
     expect(index.notes).toHaveLength(1);
     expect(index.notes[0].llm_access).toBe(false);
+  });
+
+  test("uses a fixed updatedAt fallback when git history is unavailable", async () => {
+    const store = await withStore({
+      "private.md": "# Private\n\nNo frontmatter here."
+    });
+
+    const index = await store.buildIndex();
+    expect(index.notes[0].updatedAt).toBe(fallbackUpdatedAt);
+  });
+
+  test("uses the latest git commit date for tracked markdown notes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-git-"));
+    const olderDate = "2024-01-02T03:04:05+09:00";
+    const newerDate = "2024-02-03T04:05:06+09:00";
+
+    await runGit(root, ["init"]);
+    await runGit(root, ["config", "user.email", "secret-wiki@example.test"]);
+    await runGit(root, ["config", "user.name", "Secret Wiki Test"]);
+    await writeVaultFile(root, "tracked.md", "---\ntitle: Tracked\n---\nInitial body.");
+    await runGit(root, ["add", "vault/tracked.md"]);
+    await runGit(root, ["commit", "-m", "Add tracked note"], {
+      GIT_AUTHOR_DATE: olderDate,
+      GIT_COMMITTER_DATE: olderDate
+    });
+    await writeVaultFile(root, "tracked.md", "---\ntitle: Tracked\n---\nUpdated body.");
+    await runGit(root, ["add", "vault/tracked.md"]);
+    await runGit(root, ["commit", "-m", "Update tracked note"], {
+      GIT_AUTHOR_DATE: newerDate,
+      GIT_COMMITTER_DATE: newerDate
+    });
+    await writeVaultFile(root, "untracked.md", "---\ntitle: Untracked\n---\nDraft body.");
+
+    const store = createWikiStore({ rootDir: root });
+    const index = await store.buildIndex();
+    const tracked = index.notes.find((note) => note.id === "tracked");
+    const untracked = index.notes.find((note) => note.id === "untracked");
+
+    expect(tracked?.updatedAt).toBe(newerDate);
+    expect(untracked?.updatedAt).toBe(fallbackUpdatedAt);
+  });
+
+  test("unshallows git history before reading tracked markdown dates", async () => {
+    const sourceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-source-"));
+    const cloneParent = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-clone-"));
+    const shallowRoot = path.join(cloneParent, "repo");
+    const noteDate = "2024-03-04T05:06:07+09:00";
+    const headDate = "2024-04-05T06:07:08+09:00";
+
+    await runGit(sourceRoot, ["init"]);
+    await runGit(sourceRoot, ["config", "user.email", "secret-wiki@example.test"]);
+    await runGit(sourceRoot, ["config", "user.name", "Secret Wiki Test"]);
+    await writeVaultFile(sourceRoot, "tracked.md", "---\ntitle: Tracked\n---\nInitial body.");
+    await runGit(sourceRoot, ["add", "vault/tracked.md"]);
+    await runGit(sourceRoot, ["commit", "-m", "Add tracked note"], {
+      GIT_AUTHOR_DATE: noteDate,
+      GIT_COMMITTER_DATE: noteDate
+    });
+    await fs.writeFile(path.join(sourceRoot, "README.md"), "# Readme\n", "utf8");
+    await runGit(sourceRoot, ["add", "README.md"]);
+    await runGit(sourceRoot, ["commit", "-m", "Update readme"], {
+      GIT_AUTHOR_DATE: headDate,
+      GIT_COMMITTER_DATE: headDate
+    });
+    await execFileAsync("git", ["clone", "--depth", "1", pathToFileUrl(sourceRoot), shallowRoot]);
+
+    const store = createWikiStore({ rootDir: shallowRoot });
+    const index = await store.buildIndex();
+    const tracked = index.notes.find((note) => note.id === "tracked");
+
+    expect(tracked?.updatedAt).toBe(noteDate);
+    expect(tracked?.updatedAt).not.toBe(headDate);
   });
 
   test("search can be restricted to llm_access notes", async () => {
@@ -47,6 +141,16 @@ describe("wiki store", () => {
     expect(a?.outgoing).toEqual(["b"]);
     expect(a?.brokenLinks).toEqual(["missing.md"]);
     expect(b?.backlinks).toEqual(["a"]);
+  });
+
+  test("link card directives use their label in note excerpts", async () => {
+    const store = await withStore({
+      "card.md": "---\ntitle: Card\n---\n::link-card[Example Site](https://example.com)\n\nBody text."
+    });
+
+    const card = await store.getNote("card");
+    expect(card?.excerpt).toContain("Example Site");
+    expect(card?.excerpt).not.toContain("::link-card");
   });
 
   test("page bundle index.md files use the folder as their canonical note id", async () => {
@@ -90,27 +194,17 @@ describe("wiki store", () => {
     await expect(store.resolveMediaFile("gallery/item", "../secret.jpg")).rejects.toThrow("Invalid media path");
   });
 
-  test("generated folder indexes are protected and omit themselves from the generated list", async () => {
+  test("public export does not generate folder index files", async () => {
     const store = await withStore({
       "boardgame/a.md": "---\ntitle: Alpha\ntags: [boardgame]\n---\nA",
       "boardgame/b/index.md": "---\ntitle: Beta\ntags: [boardgame]\ncover: assets/cover.jpg\n---\nB",
       "boardgame/b/assets/cover.jpg": "cover"
     });
 
-    const generated = await store.generateFolderIndex({ folder: "boardgame" });
-    expect(generated?.id).toBe("boardgame");
+    const result = await store.exportPublicSite();
 
-    const generatedMarkdown = await fs.readFile(path.join(store.vaultDir, "boardgame", "index.md"), "utf8");
-    expect(generatedMarkdown).toContain("auto_index: true");
-    expect(generatedMarkdown).toContain("[[boardgame/a|Alpha]]");
-    expect(generatedMarkdown).toContain("[[boardgame/b|Beta]]");
-    expect(generatedMarkdown).toContain("![cover](b/assets/cover.jpg)");
-    expect(generatedMarkdown).not.toContain("[[boardgame|");
-
-    const protectedStore = await withStore({
-      "boardgame/index.md": "---\ntitle: Hand Written\n---\nDo not overwrite."
-    });
-    await expect(protectedStore.generateFolderIndex({ folder: "boardgame" })).rejects.toThrow("Refusing to overwrite");
+    expect(result.notes.sort()).toEqual(["boardgame/a", "boardgame/b"]);
+    await expect(fs.access(path.join(store.vaultDir, "boardgame", "index.md"))).rejects.toThrow();
   });
 
   test("public export includes all notes and strips local-only frontmatter", async () => {
@@ -166,6 +260,7 @@ describe("wiki store", () => {
     expect(updated?.llm_access).toBe(true);
     expect(updated?.path).toBe("inbox/captured/index.md");
     expect(updated?.body).toBe("Updated body\n");
+    expect(await fs.readFile(path.join(store.vaultDir, "inbox", "captured", "index.md"), "utf8")).not.toContain("updated:");
   });
 
   test("LLM update only allows notes already available to LLM", async () => {

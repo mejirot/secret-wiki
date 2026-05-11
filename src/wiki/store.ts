@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import matter from "gray-matter";
 import type {
   CreateNoteInput,
-  GenerateIndexInput,
   NoteMedia,
   NoteDetail,
   NoteSummary,
@@ -26,15 +27,15 @@ type ParsedNote = {
   noteDir: string;
   body: string;
   frontmatter: Record<string, unknown>;
-  mtime: Date;
 };
 
 type LlmAccessibleUpdateNoteInput = Omit<UpdateNoteInput, "llm_access">;
 
 const INTERNAL_EXPORT_KEYS = new Set(["llm_access"]);
 const IGNORED_FRONTMATTER_KEYS = new Set(["publish"]);
-const AUTO_INDEX_MARKER = "<!-- secret-wiki:auto-index -->";
-const DEFAULT_INDEX_FOLDERS = ["boardgame"];
+const GIT_UPDATED_AT_FALLBACK = "2026-05-10T00:00:00+09:00";
+const gitCommitDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const execFileAsync = promisify(execFile);
 
 export function createWikiStore(options: WikiStoreOptions = {}) {
   const rootDir = path.resolve(options.rootDir ?? process.cwd());
@@ -122,7 +123,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
       files.map(async (absolutePath) => {
         const raw = await fs.readFile(absolutePath, "utf8");
         const parsed = matter(raw);
-        const stat = await fs.stat(absolutePath);
         const relativePath = path.relative(vaultDir, absolutePath).replace(/\\/g, "/");
         return {
           id: canonicalIdFromRelativePath(relativePath),
@@ -130,11 +130,92 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
           relativePath,
           noteDir: noteDirFromRelativePath(relativePath),
           body: parsed.content.trimStart(),
-          frontmatter: parsed.data,
-          mtime: stat.mtime
+          frontmatter: parsed.data
         };
       })
     );
+  }
+
+  function gitVaultPathspec() {
+    const relative = path.relative(rootDir, vaultDir).replace(/\\/g, "/");
+    if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+      return undefined;
+    }
+    return relative;
+  }
+
+  function parseGitUpdatedAtLog(output: string, vaultPathspec: string) {
+    const updatedAtByPath = new Map<string, string>();
+    let currentDate: string | undefined;
+    for (const rawLine of output.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+      if (gitCommitDatePattern.test(line)) {
+        currentDate = line;
+        continue;
+      }
+      if (!currentDate || !line.toLowerCase().endsWith(".md")) {
+        continue;
+      }
+      const normalized = line.replace(/\\/g, "/");
+      const relativePath = normalized.startsWith(`${vaultPathspec}/`)
+        ? normalized.slice(vaultPathspec.length + 1)
+        : normalized;
+      if (!updatedAtByPath.has(relativePath)) {
+        updatedAtByPath.set(relativePath, currentDate);
+      }
+    }
+    return updatedAtByPath;
+  }
+
+  async function hasUsableGitHistory() {
+    try {
+      const { stdout } = await execFileAsync("git", ["rev-parse", "--is-shallow-repository"], {
+        cwd: rootDir
+      });
+      if (stdout.trim() !== "true") {
+        return true;
+      }
+      try {
+        await execFileAsync("git", ["fetch", "--unshallow", "--filter=blob:none"], {
+          cwd: rootDir,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      } catch {
+        await execFileAsync("git", ["fetch", "--unshallow"], {
+          cwd: rootDir,
+          maxBuffer: 10 * 1024 * 1024
+        });
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function readGitUpdatedAtByPath() {
+    const vaultPathspec = gitVaultPathspec();
+    if (!vaultPathspec) {
+      return new Map<string, string>();
+    }
+    if (!(await hasUsableGitHistory())) {
+      return new Map<string, string>();
+    }
+    try {
+      const { stdout } = await execFileAsync("git", ["log", "--format=%cI", "--name-only", "--", vaultPathspec], {
+        cwd: rootDir,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      return parseGitUpdatedAtLog(stdout, vaultPathspec);
+    } catch {
+      return new Map<string, string>();
+    }
+  }
+
+  function updatedAtFor(note: ParsedNote, gitUpdatedAtByPath: Map<string, string>) {
+    return gitUpdatedAtByPath.get(note.relativePath) ?? GIT_UPDATED_AT_FALLBACK;
   }
 
   function titleFor(note: ParsedNote) {
@@ -167,6 +248,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return body
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/^::link-card\[([^\]\n]+)\]\([^)]+\)\s*$/gm, "$1")
       .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, label?: string) => label ?? target)
       .replace(/[#>*_`[\]()]/g, " ")
       .replace(/\s+/g, " ")
@@ -178,10 +260,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return typeof note.frontmatter.cover === "string" && note.frontmatter.cover.trim()
       ? note.frontmatter.cover.trim()
       : undefined;
-  }
-
-  function isAutoIndex(note: ParsedNote | NoteDetail) {
-    return note.frontmatter.auto_index === true || note.body.includes(AUTO_INDEX_MARKER);
   }
 
   function isExternalTarget(target: string) {
@@ -310,6 +388,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
 
   async function buildIndex(): Promise<{ index: WikiIndex; details: Map<string, NoteDetail> }> {
     const parsedNotes = await readParsedNotes();
+    const gitUpdatedAtByPath = await readGitUpdatedAtByPath();
     const notesById = new Map(parsedNotes.map((note) => [note.id, note]));
     const linkData = new Map(parsedNotes.map((note) => [note.id, extractLinks(note, notesById)]));
     const backlinks = new Map<string, Set<string>>();
@@ -340,7 +419,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
             media: mediaData.media,
             brokenMedia: mediaData.brokenMedia,
             excerpt: excerptFor(note.body),
-            updatedAt: note.mtime.toISOString(),
+            updatedAt: updatedAtFor(note, gitUpdatedAtByPath),
             outgoing: links.outgoing,
             backlinks: [...(backlinks.get(note.id) ?? new Set<string>())].sort(),
             brokenLinks: links.brokenLinks,
@@ -500,99 +579,11 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return resolved.absolutePath;
   }
 
-  function displayFolderTitle(folder: string) {
-    return folder
-      .split("/")
-      .filter(Boolean)
-      .map((part) => part.replace(/[-_]+/g, " "))
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" / ");
-  }
-
-  function renderGeneratedIndex(folder: string, notes: NoteSummary[], previous?: NoteDetail) {
-    function coverPathForIndex(note: NoteSummary) {
-      if (!note.cover) {
-        return "";
-      }
-      const media = note.media.find((item) => item.source === note.cover || item.path === note.cover);
-      if (!media) {
-        return note.cover;
-      }
-      const noteBase = path.posix.dirname(note.path) === "." ? "" : path.posix.dirname(note.path);
-      return path.posix.relative(folder, path.posix.join(noteBase, media.path)).replace(/\\/g, "/");
-    }
-
-    const lines = [
-      AUTO_INDEX_MARKER,
-      "",
-      `# ${previous?.title ?? displayFolderTitle(folder)}`,
-      "",
-      ...notes.flatMap((note) => {
-        const tags = note.tags.length > 0 ? ` ${note.tags.map((tag) => `#${tag}`).join(" ")}` : "";
-        const updated = note.updatedAt.slice(0, 10);
-        const indexCover = coverPathForIndex(note);
-        const cover = indexCover ? `![cover](${indexCover}) ` : "";
-        const excerpt = note.excerpt ? `\n  ${note.excerpt}` : "";
-        return [`- ${cover}[[${note.id}|${note.title}]]${tags} (${updated})${excerpt}`];
-      }),
-      ""
-    ];
-    return lines.join("\n");
-  }
-
-  async function generateFolderIndex(input: GenerateIndexInput) {
-    const folder = normalizeId(input.folder);
-    if (!folder || folder.includes("..")) {
-      throw new Error(`Invalid index folder: ${input.folder}`);
-    }
-    const targetRelative = `${folder}/index.md`;
-    const targetPath = safeVaultPath(targetRelative);
-    const existing = await getNote(folder);
-    if (existing && !isAutoIndex(existing)) {
-      throw new Error(`Refusing to overwrite non-generated index: ${targetRelative}`);
-    }
-
-    const { index, details } = await buildIndex();
-    const notes = index.notes.filter((note) => {
-      if (note.id === folder || !note.id.startsWith(`${folder}/`)) {
-        return false;
-      }
-      const detail = details.get(note.id);
-      return detail ? !isAutoIndex(detail) : true;
-    });
-    if (notes.length === 0 && !existing) {
-      return undefined;
-    }
-    const body = renderGeneratedIndex(folder, notes, existing);
-    const frontmatter = {
-      title: existing?.title ?? displayFolderTitle(folder),
-      tags: existing?.tags ?? [folder],
-      llm_access: notes.length > 0 && notes.every((note) => note.llm_access),
-      auto_index: true
-    };
-
-    await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(targetPath, noteToMarkdown(frontmatter, body), "utf8");
-    return getNote(folder);
-  }
-
-  async function generateFolderIndexes(folders = DEFAULT_INDEX_FOLDERS) {
-    const generated = [];
-    for (const folder of folders) {
-      const note = await generateFolderIndex({ folder });
-      if (note) {
-        generated.push(note.id);
-      }
-    }
-    return { generated };
-  }
-
   function exportedNoteFileName(id: string) {
     return `${encodeURIComponent(id).replace(/%/g, "~")}.json`;
   }
 
   async function exportPublicSite(): Promise<PublicExportResult> {
-    await generateFolderIndexes();
     const { index, details } = await buildIndex();
     await fs.rm(exportDir, { recursive: true, force: true });
     await fs.mkdir(exportDir, { recursive: true });
@@ -655,8 +646,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     updateNote,
     updateLlmAccessibleNote,
     resolveMediaFile,
-    generateFolderIndex,
-    generateFolderIndexes,
     exportPublicSite
   };
 }
