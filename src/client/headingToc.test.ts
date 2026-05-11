@@ -5,41 +5,36 @@ describe("heading toc helpers", () => {
   test("extracts Japanese h1 through h3 headings", () => {
     const toc = extractHeadingToc(
       [
-        "# CodexもグローバルでのMCPの設定は可能",
+        "# 日本語の見出し",
         "",
-        "本文",
-        "## やり方1. クラウド上で解決してもらう(非推奨)",
+        "本文は目次に含めない",
+        "## 手順1. 準備する(必須)",
         "### 詳細",
         "#### 対象外"
       ].join("\n")
     );
 
-    expect(toc).toEqual([
-      {
-        id: "codexもグローバルでのmcpの設定は可能",
-        depth: 1,
-        text: "CodexもグローバルでのMCPの設定は可能",
-        line: 1
-      },
-      {
-        id: "やり方1-クラウド上で解決してもらう非推奨",
-        depth: 2,
-        text: "やり方1. クラウド上で解決してもらう(非推奨)",
-        line: 4
-      },
-      {
-        id: "詳細",
-        depth: 3,
-        text: "詳細",
-        line: 5
-      }
+    expect(toc.map(({ depth, text }) => ({ depth, text }))).toEqual([
+      { depth: 1, text: "日本語の見出し" },
+      { depth: 2, text: "手順1. 準備する(必須)" },
+      { depth: 3, text: "詳細" }
     ]);
+    expect(toc.map((heading) => heading.id)).toEqual(["日本語の見出し", "手順1-準備する必須", "詳細"]);
   });
 
   test("adds stable suffixes for duplicate headings", () => {
     const toc = extractHeadingToc(["# Setup", "## Setup", "### Setup"].join("\n"));
 
     expect(toc.map((heading) => heading.id)).toEqual(["setup", "setup-2", "setup-3"]);
+  });
+
+  test("keeps source line numbers for rendered heading ids", () => {
+    const toc = extractHeadingToc(["Intro", "", "# First", "Text", "## Second"].join("\n"));
+
+    expect(toc.map(({ text, line }) => ({ text, line }))).toEqual([
+      { text: "First", line: 3 },
+      { text: "Second", line: 5 }
+    ]);
   });
 
   test("ignores headings inside fenced code blocks", () => {
