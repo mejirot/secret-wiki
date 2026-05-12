@@ -21,6 +21,7 @@ import {
   Tag
 } from "lucide-react";
 import type { NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
+import { extractHeadingToc, headingSlug, type HeadingDepth, type HeadingTocItem } from "./headingToc.js";
 import { parseLinkCardHref, renderLinkCardDirectives, type LinkCardData } from "./linkCards.js";
 import { buildPlantUmlSvgUrl, isPlantUmlLanguage } from "./plantuml.js";
 import "./styles.css";
@@ -43,6 +44,14 @@ type RecentFolder = {
   path: string;
   count: number;
   updatedAt: string;
+};
+
+type MarkdownHeadingNode = {
+  position?: {
+    start?: {
+      line?: number;
+    };
+  };
 };
 
 function buildFolderTree(folders: WikiIndex["folders"]): FolderTreeNode[] {
@@ -229,6 +238,58 @@ function LinkCard({ card }: { card: LinkCardData }) {
       <strong>{card.label}</strong>
       <span className="linkCardUrl">{card.url}</span>
     </a>
+  );
+}
+
+function reactNodeText(children: React.ReactNode): string {
+  return React.Children.toArray(children)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return String(child);
+      }
+      if (React.isValidElement<{ children?: React.ReactNode }>(child)) {
+        return reactNodeText(child.props.children);
+      }
+      return "";
+    })
+    .join("");
+}
+
+function scrollToHeading(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function TableOfContents({ items, placement = "inspector" }: { items: HeadingTocItem[]; placement?: "inspector" | "reader" }) {
+  if (items.length < 2) {
+    return null;
+  }
+
+  const nav = (
+    <nav className="tocList" aria-label="Contents">
+      {items.map((item) => (
+        <button key={`${item.id}-${item.line}`} className={`tocButton depth${item.depth}`} onClick={() => scrollToHeading(item.id)}>
+          {item.text}
+        </button>
+      ))}
+    </nav>
+  );
+
+  if (placement === "reader") {
+    return (
+      <section className="tocSection readerTocSection">
+        <details className="tocDisclosure">
+          <summary>Contents</summary>
+          {nav}
+        </details>
+      </section>
+    );
+  }
+
+  return (
+    <section className="tocSection inspectorTocSection">
+      <h2>Contents</h2>
+      {nav}
+    </section>
   );
 }
 
@@ -611,9 +672,11 @@ function App() {
   }, [index.folders, index.notes]);
   const topTags = useMemo(() => [...index.tags].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja")).slice(0, 12), [index.tags]);
 
-  const visibleBody = selected
-    ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body, index.notes, selected.id), selected))
-    : "";
+  const visibleBody = useMemo(
+    () => (selected ? renderLinkCardDirectives(renderMediaLinks(renderWikiLinks(selected.body, index.notes, selected.id), selected)) : ""),
+    [index.notes, selected]
+  );
+  const tableOfContents = useMemo(() => extractHeadingToc(visibleBody), [visibleBody]);
 
   function selectFolder(node: FolderTreeNode) {
     setActiveFolder(node.path);
@@ -662,6 +725,14 @@ function App() {
         {hasChildren && isExpanded ? node.children.map((child) => renderFolderNode(child, depth + 1)) : null}
       </React.Fragment>
     );
+  }
+
+  function markdownHeading(depth: HeadingDepth, children: React.ReactNode, node?: MarkdownHeadingNode) {
+    const line = node?.position?.start?.line;
+    const id = tableOfContents.find((item) => item.depth === depth && item.line === line)?.id ?? headingSlug(reactNodeText(children));
+    const HeadingTag = `h${depth}` as const;
+
+    return <HeadingTag id={id}>{children}</HeadingTag>;
   }
 
   async function copyCurrentNoteLink() {
@@ -764,11 +835,16 @@ function App() {
               </div>
             </div>
 
+            <TableOfContents items={tableOfContents} placement="reader" />
+
             <article className={selected.tags.includes("レシピ") ? "markdown recipeMarkdown" : "markdown"}>
               <ReactMarkdown
                 urlTransform={markdownUrlTransform}
                 components={{
                   pre: MarkdownPre,
+                  h1: ({ children, node }) => markdownHeading(1, children, node),
+                  h2: ({ children, node }) => markdownHeading(2, children, node),
+                  h3: ({ children, node }) => markdownHeading(3, children, node),
                   p: ({ children }) => {
                     const linkCard = singleChildLinkCard(children);
                     if (linkCard) {
@@ -854,6 +930,8 @@ function App() {
       <aside className="inspector">
         {selected ? (
           <>
+            <TableOfContents items={tableOfContents} />
+
             <section>
               <h2>Access</h2>
               <div className="accessGrid">
