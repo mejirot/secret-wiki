@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import {
@@ -528,6 +528,7 @@ function App() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [dataMode, setDataMode] = useState<DataMode>(forcedPublicMode ? "public" : "local");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const folderSyncedNoteId = useRef<string | null>(null);
 
   async function loadIndex(preferredId?: string) {
     const { index: nextIndex, mode } = await loadWikiIndex();
@@ -596,6 +597,22 @@ function App() {
     window.addEventListener("popstate", syncFromHistory);
     return () => window.removeEventListener("popstate", syncFromHistory);
   }, [index.notes]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      folderSyncedNoteId.current = null;
+      return;
+    }
+    if (folderSyncedNoteId.current === selectedId) {
+      return;
+    }
+    const note = index.notes.find((item) => item.id === selectedId);
+    if (!note) {
+      return;
+    }
+    folderSyncedNoteId.current = selectedId;
+    setActiveFolder(note.folder);
+  }, [index.notes, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
