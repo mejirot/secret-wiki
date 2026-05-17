@@ -23,8 +23,14 @@ function fenceStateFor(line: string): FenceState | undefined {
   }
 
   const markerRun = match[1] ?? "";
+  const marker = markerRun[0] as "`" | "~";
+  const infoString = line.slice(match[0].length).trim();
+  if (marker === "`" && infoString.includes("`")) {
+    return undefined;
+  }
+
   return {
-    marker: markerRun[0] as "`" | "~",
+    marker,
     length: markerRun.length
   };
 }

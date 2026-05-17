@@ -54,6 +54,12 @@ describe("heading toc helpers", () => {
     expect(toc.map((heading) => heading.text)).toEqual(["Real", "Real child"]);
   });
 
+  test("does not treat inline code-like backtick runs as fenced code blocks", () => {
+    const toc = extractHeadingToc(["# Install", "```cmd```", "## Next step"].join("\n"));
+
+    expect(toc.map((heading) => heading.text)).toEqual(["Install", "Next step"]);
+  });
+
   test("normalizes inline markdown from heading text", () => {
     expect(plainHeadingText("`Code` and [Link](https://example.com) ###")).toBe("Code and Link");
     expect(headingSlug("A_B  C!")).toBe("a-b-c");

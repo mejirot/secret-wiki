@@ -640,15 +640,26 @@ button {
 .markdown code {
   border-radius: 5px;
   background: #ece9df;
+  color: #101914;
   padding: 2px 5px;
 }
 
 .markdown pre {
   overflow: auto;
+  border: 1px solid #2f3d35;
   border-radius: 8px;
-  background: #17211c;
-  color: #f7f6f1;
+  background: #101914;
+  color: #f4f1e8;
   padding: 16px;
+}
+
+.markdown pre code {
+  display: block;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  line-height: 1.6;
 }
 
 .markdown img {
