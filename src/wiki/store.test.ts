@@ -143,6 +143,36 @@ describe("wiki store", () => {
     expect(b?.backlinks).toEqual(["a"]);
   });
 
+  test("external links come from frontmatter, markdown links, and link cards", async () => {
+    const store = await withStore({
+      "links.md": [
+        "---",
+        "title: Links",
+        "links:",
+        "  - label: Frontmatter",
+        "    url: https://example.com",
+        "  - label: Invalid",
+        "    url: not-a-url",
+        "  - label: Mail",
+        "    url: mailto:hello@example.com",
+        "---",
+        "See [Body](https://body.example/path) and [Duplicate](https://example.com).",
+        "::link-card[Card](https://card.example)",
+        "Ignore ![Remote image](https://image.example/cover.png), [Mail](mailto:hello@example.com), and [Internal](target.md)."
+      ].join("\n"),
+      "target.md": "---\ntitle: Target\n---\nTarget."
+    });
+
+    const links = await store.getNote("links");
+    expect(links?.externalLinks).toEqual([
+      { label: "Frontmatter", url: "https://example.com/" },
+      { label: "Body", url: "https://body.example/path" },
+      { label: "Card", url: "https://card.example/" }
+    ]);
+    expect(links?.outgoing).toEqual(["target"]);
+    expect(links?.brokenLinks).toEqual([]);
+  });
+
   test("link card directives use their label in note excerpts", async () => {
     const store = await withStore({
       "card.md": "---\ntitle: Card\n---\n::link-card[Example Site](https://example.com)\n\nBody text."
@@ -209,7 +239,7 @@ describe("wiki store", () => {
 
   test("public export includes all notes and strips local-only frontmatter", async () => {
     const store = await withStore({
-      "public.md": "---\ntitle: Public\npublish: true\nllm_access: true\n---\nSee [[private]].",
+      "public.md": "---\ntitle: Public\npublish: true\nllm_access: true\nlinks:\n  - label: Docs\n    url: https://docs.example\n---\nSee [[private]] and [Site](https://site.example).",
       "private.md": "---\ntitle: Private\n---\nSecret."
     });
 
@@ -222,6 +252,11 @@ describe("wiki store", () => {
 
     const exported = JSON.parse(await fs.readFile(path.join(store.exportDir, "data", "notes", "public.json"), "utf8"));
     expect(exported.llm_access).toBe(true);
+    expect(exported.externalLinks).toEqual([
+      { label: "Docs", url: "https://docs.example/" },
+      { label: "Site", url: "https://site.example/" }
+    ]);
+    expect(exported.frontmatter.links).toEqual([{ label: "Docs", url: "https://docs.example" }]);
     expect(exported.frontmatter.publish).toBeUndefined();
     expect(exported.frontmatter.llm_access).toBeUndefined();
   });

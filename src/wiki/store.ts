@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import matter from "gray-matter";
 import type {
   CreateNoteInput,
+  ExternalLink,
   NoteMedia,
   NoteDetail,
   NoteSummary,
@@ -244,6 +245,62 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     };
   }
 
+  function parseExternalUrl(rawUrl: unknown) {
+    if (typeof rawUrl !== "string") {
+      return undefined;
+    }
+    try {
+      const url = new URL(rawUrl.trim());
+      return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function addExternalLink(linksByUrl: Map<string, ExternalLink>, rawUrl: unknown, rawLabel: unknown) {
+    const url = parseExternalUrl(rawUrl);
+    if (!url || linksByUrl.has(url)) {
+      return;
+    }
+    const label = typeof rawLabel === "string" ? rawLabel.trim() : "";
+    linksByUrl.set(url, { label, url });
+  }
+
+  function extractExternalLinks(note: ParsedNote) {
+    const linksByUrl = new Map<string, ExternalLink>();
+    const frontmatterLinks = note.frontmatter.links;
+    if (Array.isArray(frontmatterLinks)) {
+      for (const link of frontmatterLinks) {
+        if (!link || typeof link !== "object") {
+          continue;
+        }
+        const candidate = link as Record<string, unknown>;
+        addExternalLink(linksByUrl, candidate.url, candidate.label);
+      }
+    }
+
+    const bodyLinks: Array<{ index: number; label: string; url: string }> = [];
+    const linkCardPattern = /^::link-card\[([^\]\n]+)\]\(([^)\s]+)\)\s*$/gm;
+    for (const match of note.body.matchAll(linkCardPattern)) {
+      bodyLinks.push({ index: match.index ?? 0, label: match[1], url: match[2] });
+    }
+
+    const markdownPattern = /!?\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+    for (const match of note.body.matchAll(markdownPattern)) {
+      if (match[0].startsWith("!")) {
+        continue;
+      }
+      bodyLinks.push({ index: match.index ?? 0, label: match[1], url: match[2] });
+    }
+
+    bodyLinks.sort((a, b) => a.index - b.index);
+    for (const link of bodyLinks) {
+      addExternalLink(linksByUrl, link.url, link.label);
+    }
+
+    return [...linksByUrl.values()];
+  }
+
   function excerptFor(body: string) {
     return body
       .replace(/```[\s\S]*?```/g, " ")
@@ -423,6 +480,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
             outgoing: links.outgoing,
             backlinks: [...(backlinks.get(note.id) ?? new Set<string>())].sort(),
             brokenLinks: links.brokenLinks,
+            externalLinks: extractExternalLinks(note),
             ...accessFor(note)
           };
           details.set(note.id, {

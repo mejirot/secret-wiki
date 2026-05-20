@@ -1071,7 +1071,8 @@ button {
   font-size: 13px;
 }
 
-.linkGroup button {
+.linkGroup button,
+.linkGroup a {
   display: flex;
   gap: 7px;
   align-items: center;
@@ -1079,6 +1080,14 @@ button {
   padding: 0;
   color: #17684c;
   text-align: left;
+}
+
+.linkGroup a {
+  text-decoration: none;
+}
+
+.linkGroup a:hover {
+  text-decoration: underline;
 }
 
 .linkGroup.broken span {
