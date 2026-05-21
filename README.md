@@ -24,10 +24,15 @@ Markdown files in `vault/` are the source of truth.
 title: Example
 tags: [wiki]
 llm_access: false
+links:
+  - label: GitHub
+    url: https://github.com/mejirot/secret-wiki
 ---
 ```
 
 Unset `llm_access` values are treated as `false`. This flag controls MCP visibility only.
+
+Use `links` for external links that should appear in the right-side `Links` inspector under `External`. Each item needs a `label` for display and a `url` to open. Only `http://` and `https://` URLs are shown; unsupported schemes such as `mailto:` are ignored.
 
 ## MCP Access Model
 

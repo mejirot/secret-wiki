@@ -20,7 +20,7 @@ import {
   Sparkles,
   Tag
 } from "lucide-react";
-import type { NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
+import type { ExternalLink, NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
 import { extractHeadingToc, headingSlug, type HeadingDepth, type HeadingTocItem } from "./headingToc.js";
 import { parseLinkCardHref, renderLinkCardDirectives, type LinkCardData } from "./linkCards.js";
 import { buildPlantUmlSvgUrl, isPlantUmlLanguage } from "./plantuml.js";
@@ -970,6 +970,7 @@ function App() {
               <h2>Links</h2>
               <LinkList title="Outgoing" ids={selected.outgoing} notesById={notesById} onSelect={selectNote} />
               <LinkList title="Backlinks" ids={selected.backlinks} notesById={notesById} onSelect={selectNote} />
+              <ExternalLinkList links={selected.externalLinks ?? []} />
               {selected.brokenLinks.length > 0 && (
                 <div className="linkGroup broken">
                   <strong>Broken</strong>
@@ -1183,6 +1184,35 @@ function HomeView({
           </section>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function externalLinkLabel(link: ExternalLink) {
+  if (link.label) {
+    return link.label;
+  }
+  try {
+    return new URL(link.url).hostname.replace(/^www\./, "") || link.url;
+  } catch {
+    return link.url;
+  }
+}
+
+function ExternalLinkList({ links }: { links: ExternalLink[] }) {
+  return (
+    <div className="linkGroup">
+      <strong>External</strong>
+      {links.length === 0 ? (
+        <span>None</span>
+      ) : (
+        links.map((link) => (
+          <a key={link.url} href={link.url} target="_blank" rel="noreferrer" title={link.url}>
+            <Link2 size={13} />
+            {externalLinkLabel(link)}
+          </a>
+        ))
+      )}
     </div>
   );
 }

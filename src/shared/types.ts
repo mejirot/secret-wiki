@@ -9,6 +9,11 @@ export type NoteMedia = {
   exists: boolean;
 };
 
+export type ExternalLink = {
+  label: string;
+  url: string;
+};
+
 export type NoteSummary = NoteAccess & {
   id: string;
   path: string;
@@ -23,6 +28,7 @@ export type NoteSummary = NoteAccess & {
   outgoing: string[];
   backlinks: string[];
   brokenLinks: string[];
+  externalLinks: ExternalLink[];
 };
 
 export type NoteDetail = NoteSummary & {
