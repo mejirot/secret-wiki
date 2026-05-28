@@ -29,6 +29,7 @@ import "./styles.css";
 type DataMode = "local" | "public";
 const forcedPublicMode = import.meta.env.VITE_SECRET_WIKI_MODE === "public";
 const plantUmlServerUrl = import.meta.env.VITE_PLANTUML_SERVER_URL;
+const mobileLayoutQuery = "(max-width: 820px)";
 
 const emptyIndex: WikiIndex = { notes: [], tags: [], folders: [], brokenLinks: [], mediaWarnings: [] };
 
@@ -257,6 +258,10 @@ function reactNodeText(children: React.ReactNode): string {
 
 function scrollToHeading(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function isMobileLayout() {
+  return window.matchMedia(mobileLayoutQuery).matches;
 }
 
 function TableOfContents({ items, placement = "inspector" }: { items: HeadingTocItem[]; placement?: "inspector" | "reader" }) {
@@ -552,6 +557,9 @@ function App() {
     } else {
       pushBrowserNote(id);
     }
+    if (isMobileLayout()) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+    }
   }
 
   function selectHome(options: { replace?: boolean } = {}) {
@@ -765,7 +773,7 @@ function App() {
   }
 
   return (
-    <div className="appShell">
+    <div className={selectedId ? "appShell noteSelected" : "appShell homeSelected"}>
       <aside className="sidebar">
         <div className="brand">
           <BookOpen size={22} />
