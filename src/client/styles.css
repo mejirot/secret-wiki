@@ -1164,7 +1164,15 @@ button {
     order: 1;
   }
 
+  .appShell.homeSelected .readerPane {
+    order: 1;
+  }
+
   .appShell.noteSelected .listPane {
+    order: 2;
+  }
+
+  .appShell.homeSelected .listPane {
     order: 2;
   }
 
@@ -1172,7 +1180,15 @@ button {
     order: 3;
   }
 
+  .appShell.homeSelected .sidebar {
+    order: 3;
+  }
+
   .appShell.noteSelected .inspector {
+    order: 4;
+  }
+
+  .appShell.homeSelected .inspector {
     order: 4;
   }
 
@@ -1192,6 +1208,14 @@ button {
 
   .homeHeader h1 {
     font-size: 30px;
+  }
+
+  .appShell.homeSelected .homeHeader {
+    order: 2;
+  }
+
+  .appShell.homeSelected .homeGrid {
+    order: 1;
   }
 
   .homeStats {

@@ -773,7 +773,7 @@ function App() {
   }
 
   return (
-    <div className={selectedId ? "appShell noteSelected" : "appShell"}>
+    <div className={selectedId ? "appShell noteSelected" : "appShell homeSelected"}>
       <aside className="sidebar">
         <div className="brand">
           <BookOpen size={22} />
