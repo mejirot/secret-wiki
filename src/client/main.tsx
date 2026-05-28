@@ -29,6 +29,7 @@ import "./styles.css";
 type DataMode = "local" | "public";
 const forcedPublicMode = import.meta.env.VITE_SECRET_WIKI_MODE === "public";
 const plantUmlServerUrl = import.meta.env.VITE_PLANTUML_SERVER_URL;
+const mobileLayoutQuery = "(max-width: 820px)";
 
 const emptyIndex: WikiIndex = { notes: [], tags: [], folders: [], brokenLinks: [], mediaWarnings: [] };
 
@@ -552,6 +553,9 @@ function App() {
     } else {
       pushBrowserNote(id);
     }
+    if (window.matchMedia(mobileLayoutQuery).matches) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
+    }
   }
 
   function selectHome(options: { replace?: boolean } = {}) {
@@ -765,7 +769,7 @@ function App() {
   }
 
   return (
-    <div className="appShell">
+    <div className={selectedId ? "appShell noteSelected" : "appShell"}>
       <aside className="sidebar">
         <div className="brand">
           <BookOpen size={22} />

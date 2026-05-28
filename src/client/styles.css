@@ -1160,6 +1160,22 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .appShell.noteSelected .readerPane {
+    order: 1;
+  }
+
+  .appShell.noteSelected .listPane {
+    order: 2;
+  }
+
+  .appShell.noteSelected .sidebar {
+    order: 3;
+  }
+
+  .appShell.noteSelected .inspector {
+    order: 4;
+  }
+
   .sidebar,
   .listPane,
   .inspector {
