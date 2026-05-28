@@ -260,6 +260,10 @@ function scrollToHeading(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function isMobileLayout() {
+  return window.matchMedia(mobileLayoutQuery).matches;
+}
+
 function TableOfContents({ items, placement = "inspector" }: { items: HeadingTocItem[]; placement?: "inspector" | "reader" }) {
   if (items.length < 2) {
     return null;
@@ -553,7 +557,7 @@ function App() {
     } else {
       pushBrowserNote(id);
     }
-    if (window.matchMedia(mobileLayoutQuery).matches) {
+    if (isMobileLayout()) {
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "auto" }));
     }
   }
