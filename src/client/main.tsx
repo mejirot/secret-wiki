@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import {
@@ -18,7 +18,8 @@ import {
   Send,
   Shield,
   Sparkles,
-  Tag
+  Tag,
+  X
 } from "lucide-react";
 import type { ExternalLink, NoteDetail, NoteMedia, NoteSummary, WikiIndex } from "../shared/types.js";
 import { extractHeadingToc, headingSlug, type HeadingDepth, type HeadingTocItem } from "./headingToc.js";
@@ -54,6 +55,13 @@ type MarkdownHeadingNode = {
     };
   };
 };
+
+type LightboxImage = {
+  src: string;
+  alt: string;
+};
+
+type OpenImageLightbox = (image: LightboxImage) => void;
 
 function buildFolderTree(folders: WikiIndex["folders"]): FolderTreeNode[] {
   const nodes = new Map<string, FolderTreeNode>();
@@ -192,7 +200,68 @@ function codeBlockText(children: React.ReactNode) {
     .replace(/\n$/, "");
 }
 
-function PlantUmlDiagram({ source }: { source: string }) {
+function ImageLightbox({ image, onClose }: { image: LightboxImage | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!image) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [image, onClose]);
+
+  if (!image) {
+    return null;
+  }
+
+  return (
+    <div className="imageLightboxOverlay" onClick={onClose}>
+      <div className="imageLightboxDialog" role="dialog" aria-modal="true" aria-label="拡大画像" onClick={(event) => event.stopPropagation()}>
+        <button className="imageLightboxClose" type="button" aria-label="閉じる" onClick={onClose}>
+          <X size={20} />
+        </button>
+        <img className="imageLightboxImage" src={image.src} alt={image.alt} />
+        {image.alt && <p className="imageLightboxCaption">{image.alt}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ZoomableImage({
+  src,
+  alt,
+  onOpenImage,
+  ...props
+}: React.ComponentPropsWithoutRef<"img"> & {
+  onOpenImage: OpenImageLightbox;
+}) {
+  const imageSrc = typeof src === "string" ? src : "";
+  const imageAlt = alt ?? "";
+
+  if (!imageSrc) {
+    return <img {...props} src="" alt={imageAlt} />;
+  }
+
+  return (
+    <button className="zoomableImageButton" type="button" aria-label="画像を拡大表示" onClick={() => onOpenImage({ src: imageSrc, alt: imageAlt })}>
+      <img {...props} src={imageSrc} alt={imageAlt} />
+    </button>
+  );
+}
+
+function PlantUmlDiagram({ source, onOpenImage }: { source: string; onOpenImage: OpenImageLightbox }) {
   const imageUrl = useMemo(() => buildPlantUmlSvgUrl(source, plantUmlServerUrl), [source]);
   const [hasError, setHasError] = useState(false);
 
@@ -213,19 +282,25 @@ function PlantUmlDiagram({ source }: { source: string }) {
 
   return (
     <figure className="plantUmlDiagram">
-      <img src={imageUrl} alt="PlantUML diagram" loading="lazy" onError={() => setHasError(true)} />
+      <ZoomableImage src={imageUrl} alt="PlantUML diagram" loading="lazy" onError={() => setHasError(true)} onOpenImage={onOpenImage} />
     </figure>
   );
 }
 
-function MarkdownPre({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) {
+function MarkdownPre({
+  children,
+  onOpenImage,
+  ...props
+}: React.ComponentPropsWithoutRef<"pre"> & {
+  onOpenImage: OpenImageLightbox;
+}) {
   const childNodes = React.Children.toArray(children);
   const [firstChild] = childNodes;
 
   if (childNodes.length === 1 && React.isValidElement<{ className?: string; children?: React.ReactNode }>(firstChild)) {
     const codeClassName = firstChild.props.className;
     if (isPlantUmlLanguage(codeClassName)) {
-      return <PlantUmlDiagram source={codeBlockText(firstChild.props.children)} />;
+      return <PlantUmlDiagram source={codeBlockText(firstChild.props.children)} onOpenImage={onOpenImage} />;
     }
   }
 
@@ -533,7 +608,10 @@ function App() {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   const [dataMode, setDataMode] = useState<DataMode>(forcedPublicMode ? "public" : "local");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
   const folderSyncedNoteId = useRef<string | null>(null);
+  const openLightbox = useCallback((image: LightboxImage) => setLightboxImage(image), []);
+  const closeLightbox = useCallback(() => setLightboxImage(null), []);
 
   async function loadIndex(preferredId?: string) {
     const { index: nextIndex, mode } = await loadWikiIndex();
@@ -866,7 +944,7 @@ function App() {
               <ReactMarkdown
                 urlTransform={markdownUrlTransform}
                 components={{
-                  pre: MarkdownPre,
+                  pre: (props) => <MarkdownPre {...props} onOpenImage={openLightbox} />,
                   h1: ({ children, node }) => markdownHeading(1, children, node),
                   h2: ({ children, node }) => markdownHeading(2, children, node),
                   h3: ({ children, node }) => markdownHeading(3, children, node),
@@ -914,7 +992,7 @@ function App() {
                       </a>
                     );
                   },
-                  img: ({ src, alt }) => <img src={src ?? ""} alt={alt ?? ""} loading="lazy" />
+                  img: ({ src, alt }) => <ZoomableImage src={src ?? ""} alt={alt ?? ""} loading="lazy" onOpenImage={openLightbox} />
                 }}
               >
                 {visibleBody}
@@ -1019,6 +1097,7 @@ function App() {
           </section>
         )}
       </aside>
+      <ImageLightbox image={lightboxImage} onClose={closeLightbox} />
     </div>
   );
 }
