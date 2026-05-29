@@ -280,7 +280,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     }
 
     const bodyLinks: Array<{ index: number; label: string; url: string }> = [];
-    const linkCardPattern = /^::link-card\[([^\]\n]+)\]\(([^)\s]+)\)\s*$/gm;
+    const linkCardPattern = /^::link-card\[([^\]\r\n]+)\]\(([^)\s]+)\)[^\S\r\n]*$/gm;
     for (const match of note.body.matchAll(linkCardPattern)) {
       bodyLinks.push({ index: match.index ?? 0, label: match[1], url: match[2] });
     }
@@ -305,7 +305,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return body
       .replace(/```[\s\S]*?```/g, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
-      .replace(/^::link-card\[([^\]\n]+)\]\([^)]+\)\s*$/gm, "$1")
+      .replace(/^::link-card\[([^\]\r\n]+)\]\([^)]+\)[^\S\r\n]*$/gm, "$1")
       .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, label?: string) => label ?? target)
       .replace(/[#>*_`[\]()]/g, " ")
       .replace(/\s+/g, " ")
