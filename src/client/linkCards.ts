@@ -52,7 +52,7 @@ export function parseLinkCardHref(href?: string): LinkCardData | undefined {
 }
 
 export function renderLinkCardDirectives(body: string) {
-  return body.replace(/^::link-card\[([^\]\n]+)\]\(([^)\s]+)\)\s*$/gm, (match, label: string, rawUrl: string) => {
+  return body.replace(/^::link-card\[([^\]\r\n]+)\]\(([^)\s]+)\)[^\S\r\n]*$/gm, (match, label: string, rawUrl: string) => {
     const url = parseLinkCardUrl(rawUrl);
     if (!url) {
       return match;

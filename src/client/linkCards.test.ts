@@ -27,6 +27,18 @@ describe("link card helpers", () => {
     expect(rendered).toContain(`[Two](${linkCardHref("https://two.example/path")})`);
   });
 
+  test("preserves LF blank lines after a directive", () => {
+    const rendered = renderLinkCardDirectives("::link-card[Card](https://card.example)\n\nNext paragraph.");
+
+    expect(rendered).toBe(`[Card](${linkCardHref("https://card.example/")})\n\nNext paragraph.`);
+  });
+
+  test("preserves CRLF blank lines after a directive", () => {
+    const rendered = renderLinkCardDirectives("::link-card[Card](https://card.example)\r\n\r\nNext paragraph.");
+
+    expect(rendered).toBe(`[Card](${linkCardHref("https://card.example/")})\r\n\r\nNext paragraph.`);
+  });
+
   test("leaves unsupported urls unchanged", () => {
     const source = "::link-card[Mail](mailto:hello@example.com)";
 
