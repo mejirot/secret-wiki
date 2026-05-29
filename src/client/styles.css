@@ -670,6 +670,27 @@ button {
   object-fit: contain;
 }
 
+.zoomableImageButton {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.zoomableImageButton img {
+  cursor: inherit;
+}
+
+.zoomableImageButton:focus-visible {
+  outline: 3px solid rgba(23, 104, 76, 0.45);
+  outline-offset: 3px;
+}
+
 .plantUmlDiagram {
   width: min(100%, 820px);
   margin: 28px 0;
@@ -684,6 +705,10 @@ button {
   margin: 0 auto;
   border-radius: 0;
   background: #ffffff;
+}
+
+.plantUmlDiagram .zoomableImageButton {
+  margin: 0 auto;
 }
 
 .plantUmlDiagramError {
@@ -717,6 +742,71 @@ button {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.imageLightboxOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 48px);
+  background: rgba(16, 25, 20, 0.88);
+}
+
+.imageLightboxDialog {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  place-items: center;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.imageLightboxClose {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 254, 250, 0.3);
+  border-radius: 50%;
+  background: #fffefa;
+  color: #17211c;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+.imageLightboxClose:hover {
+  background: #e2eadf;
+  color: #103426;
+}
+
+.imageLightboxClose:focus-visible {
+  outline: 3px solid rgba(255, 254, 250, 0.6);
+  outline-offset: 3px;
+}
+
+.imageLightboxImage {
+  display: block;
+  max-width: min(100%, 1440px);
+  max-height: calc(100dvh - 120px);
+  border-radius: 8px;
+  background: #ffffff;
+  object-fit: contain;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+}
+
+.imageLightboxCaption {
+  max-width: min(100%, 980px);
+  margin: 0;
+  color: #f4f1e8;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .linkCard {
