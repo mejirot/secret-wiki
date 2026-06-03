@@ -2,7 +2,7 @@
   "name": "secret-wiki-tags",
   "displayName": "Secret Wiki Tags",
   "description": "Tag completion, diagnostics, and quick fixes for Secret Wiki Markdown frontmatter.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "secret-wiki",
   "private": true,
   "type": "commonjs",
