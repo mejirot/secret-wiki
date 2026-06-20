@@ -8,6 +8,9 @@ exports/
 .vite/
 coverage/
 npm-debug.log*
+.env.local
+.env.*.local
+.env.standard-site
 dev-server.*.log
 .messages/
 .vs/

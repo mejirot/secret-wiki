@@ -20,6 +20,40 @@ async function withStore(files: Record<string, string>) {
   return createWikiStore({ rootDir: root });
 }
 
+async function withGitStore(
+  files: Record<string, string>,
+  options: { ignored?: string[]; untracked?: string[]; forceTracked?: string[] } = {}
+) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "secret-wiki-git-store-"));
+  await runGit(root, ["init"]);
+  await runGit(root, ["config", "user.email", "secret-wiki@example.test"]);
+  await runGit(root, ["config", "user.name", "Secret Wiki Test"]);
+
+  if (options.ignored?.length) {
+    await fs.writeFile(path.join(root, ".gitignore"), `${options.ignored.join("\n")}\n`, "utf8");
+    await runGit(root, ["add", ".gitignore"]);
+  }
+
+  for (const [relative, content] of Object.entries(files)) {
+    await writeVaultFile(root, relative, content);
+  }
+
+  const untracked = new Set(options.untracked ?? []);
+  const forceTracked = new Set(options.forceTracked ?? []);
+  for (const relative of Object.keys(files)) {
+    if (untracked.has(relative) || forceTracked.has(relative)) {
+      continue;
+    }
+    await runGit(root, ["add", `vault/${relative.replace(/\\/g, "/")}`]);
+  }
+  for (const relative of forceTracked) {
+    await runGit(root, ["add", "-f", `vault/${relative.replace(/\\/g, "/")}`]);
+  }
+
+  await runGit(root, ["commit", "-m", "Add test files"]);
+  return createWikiStore({ rootDir: root });
+}
+
 async function writeVaultFile(root: string, relative: string, content: string) {
   const target = path.join(root, "vault", relative);
   await fs.mkdir(path.dirname(target), { recursive: true });
@@ -225,9 +259,9 @@ describe("wiki store", () => {
   });
 
   test("public export does not generate folder index files", async () => {
-    const store = await withStore({
-      "boardgame/a.md": "---\ntitle: Alpha\ntags: [boardgame]\n---\nA",
-      "boardgame/b/index.md": "---\ntitle: Beta\ntags: [boardgame]\ncover: assets/cover.jpg\n---\nB",
+    const store = await withGitStore({
+      "boardgame/a.md": "---\ntitle: Alpha\ntags: [boardgame]\npublish: true\n---\nA",
+      "boardgame/b/index.md": "---\ntitle: Beta\ntags: [boardgame]\npublish: true\ncover: assets/cover.jpg\n---\nB",
       "boardgame/b/assets/cover.jpg": "cover"
     });
 
@@ -237,18 +271,27 @@ describe("wiki store", () => {
     await expect(fs.access(path.join(store.vaultDir, "boardgame", "index.md"))).rejects.toThrow();
   });
 
-  test("public export includes all notes and strips local-only frontmatter", async () => {
-    const store = await withStore({
-      "public.md": "---\ntitle: Public\npublish: true\nllm_access: true\nlinks:\n  - label: Docs\n    url: https://docs.example\n---\nSee [[private]] and [Site](https://site.example).",
-      "private.md": "---\ntitle: Private\n---\nSecret."
+  test("public export includes only published tracked non-ignored notes and strips local-only frontmatter", async () => {
+    const store = await withGitStore({
+      "public.md":
+        "---\ntitle: Public\npublish: true\nstandard_site: true\nstandard_site_published_at: 2026-05-01T00:00:00+09:00\nllm_access: true\nlinks:\n  - label: Docs\n    url: https://docs.example\n---\nSee [[private]] and [Site](https://site.example).",
+      "private.md": "---\ntitle: Private\n---\nSecret.",
+      "untracked.md": "---\ntitle: Untracked\npublish: true\n---\nDraft.",
+      "ignored.md": "---\ntitle: Ignored\npublish: true\n---\nIgnored."
+    }, {
+      ignored: ["vault/ignored.md"],
+      untracked: ["untracked.md", "ignored.md"]
     });
 
     const result = await store.exportPublicSite();
-    expect(result.notes.sort()).toEqual(["private", "public"]);
+    expect(result.notes).toEqual(["public"]);
+    expect(result.standardSiteNotes).toEqual(["public"]);
     expect(result.warnings).toEqual([]);
 
     const exportedIndex = JSON.parse(await fs.readFile(path.join(store.exportDir, "data", "index.json"), "utf8"));
-    expect(exportedIndex.notes.map((note: { id: string }) => note.id).sort()).toEqual(["private", "public"]);
+    expect(exportedIndex.notes.map((note: { id: string }) => note.id)).toEqual(["public"]);
+    expect(exportedIndex.notes[0].outgoing).toEqual([]);
+    expect(exportedIndex.notes[0].backlinks).toEqual([]);
 
     const exported = JSON.parse(await fs.readFile(path.join(store.exportDir, "data", "notes", "public.json"), "utf8"));
     expect(exported.llm_access).toBe(true);
@@ -258,11 +301,13 @@ describe("wiki store", () => {
     ]);
     expect(exported.frontmatter.links).toEqual([{ label: "Docs", url: "https://docs.example" }]);
     expect(exported.frontmatter.publish).toBeUndefined();
+    expect(exported.frontmatter.standard_site).toBeUndefined();
+    expect(exported.frontmatter.standard_site_published_at).toBeUndefined();
     expect(exported.frontmatter.llm_access).toBeUndefined();
   });
 
-  test("public export copies media referenced by all notes", async () => {
-    const store = await withStore({
+  test("public export copies only public media referenced by public notes", async () => {
+    const store = await withGitStore({
       "public/item/index.md": "---\ntitle: Public Item\npublish: true\n---\n![cover](assets/cover.jpg)",
       "public/item/assets/cover.jpg": "public image",
       "private/item/index.md": "---\ntitle: Private Item\n---\n![cover](assets/secret.jpg)",
@@ -270,9 +315,52 @@ describe("wiki store", () => {
     });
 
     const result = await store.exportPublicSite();
-    expect(result.notes.sort()).toEqual(["private/item", "public/item"]);
+    expect(result.notes).toEqual(["public/item"]);
     await expect(fs.readFile(path.join(store.exportDir, "public", "item", "assets", "cover.jpg"), "utf8")).resolves.toBe("public image");
-    await expect(fs.readFile(path.join(store.exportDir, "private", "item", "assets", "secret.jpg"), "utf8")).resolves.toBe("private image");
+    await expect(fs.access(path.join(store.exportDir, "private", "item", "assets", "secret.jpg"))).rejects.toThrow();
+  });
+
+  test("public export marks ignored media as non-public and does not copy it", async () => {
+    const store = await withGitStore(
+      {
+        "public/item/index.md": "---\ntitle: Public Item\npublish: true\n---\n![cover](assets/cover.jpg)\n![secret](assets/secret.jpg)",
+        "public/item/assets/cover.jpg": "public image",
+        "public/item/assets/secret.jpg": "secret image"
+      },
+      {
+        ignored: ["vault/public/item/assets/secret.jpg"],
+        untracked: ["public/item/assets/secret.jpg"]
+      }
+    );
+
+    const result = await store.exportPublicSite();
+    expect(result.warnings).toEqual([{ note: "public/item", target: "assets/secret.jpg", reason: "Media file is not public" }]);
+    await expect(fs.readFile(path.join(store.exportDir, "public", "item", "assets", "cover.jpg"), "utf8")).resolves.toBe("public image");
+    await expect(fs.access(path.join(store.exportDir, "public", "item", "assets", "secret.jpg"))).rejects.toThrow();
+
+    const exported = JSON.parse(await fs.readFile(path.join(store.exportDir, "data", "notes", "public~2Fitem.json"), "utf8"));
+    expect(exported.media.find((media: { source: string; exists: boolean }) => media.source === "assets/secret.jpg")?.exists).toBe(false);
+  });
+
+  test("public scope audit reports tracked ignored files and non-public media", async () => {
+    const store = await withGitStore(
+      {
+        "ignored-tracked.md": "---\ntitle: Ignored Tracked\n---\nIgnored but tracked.",
+        "public/item/index.md": "---\ntitle: Public Item\npublish: true\n---\n![secret](assets/secret.jpg)",
+        "public/item/assets/secret.jpg": "secret image"
+      },
+      {
+        ignored: ["vault/ignored-tracked.md", "vault/public/item/assets/secret.jpg"],
+        forceTracked: ["ignored-tracked.md"],
+        untracked: ["public/item/assets/secret.jpg"]
+      }
+    );
+
+    const audit = await store.auditPublicScope();
+    expect(audit.issues).toEqual([
+      { path: "vault/ignored-tracked.md", reason: "Tracked file is ignored by .gitignore" },
+      { path: "vault/public/item/assets/secret.jpg", reason: "Media referenced by published note public/item is not tracked by git" }
+    ]);
   });
 
   test("create and update preserve private defaults unless explicitly changed", async () => {
