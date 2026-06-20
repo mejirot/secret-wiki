@@ -69,6 +69,7 @@ export type CreateNoteInput = {
 export type PublicExportResult = {
   outputDir: string;
   notes: string[];
+  standardSiteNotes: string[];
   media: string[];
   warnings: Array<{ note: string; target: string; reason: string }>;
 };

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently -n api,web -c green,blue \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1\"",
     "build": "tsc -p tsconfig.json && vite build",
-    "build:public": "tsc -p tsconfig.json && vite build --mode public && tsx src/scripts/buildPublic.ts",
+    "build:public": "npm run check:public-scope && tsc -p tsconfig.json && vite build --mode public && tsx src/scripts/buildPublic.ts",
+    "check:public-scope": "tsx src/scripts/checkPublicScope.ts",
     "deploy:public": "npm run build:public && wrangler deploy",
     "preview": "node dist/server/index.js",
     "test": "vitest run",
@@ -14,7 +15,10 @@
     "extension:test": "npm --prefix extensions/secret-wiki-tags run test",
     "extension:package": "npm --prefix extensions/secret-wiki-tags run package",
     "mcp": "tsx src/mcp/server.ts",
-    "export:public": "tsx src/scripts/exportPublic.ts"
+    "export:public": "tsx src/scripts/exportPublic.ts",
+    "standard-site:dry-run": "tsx src/scripts/syncStandardSite.ts --dry-run",
+    "standard-site:sync": "tsx src/scripts/syncStandardSite.ts",
+    "standard-site:sync:delete-stale": "tsx src/scripts/syncStandardSite.ts --delete-stale"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",

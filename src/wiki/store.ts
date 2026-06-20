@@ -14,6 +14,7 @@ import type {
   UpdateNoteInput,
   WikiIndex
 } from "../shared/types.js";
+import { isStandardSiteNote, standardSiteInternalFrontmatterKeys } from "../shared/standardSite.js";
 
 type WikiStoreOptions = {
   rootDir?: string;
@@ -31,8 +32,19 @@ type ParsedNote = {
 };
 
 type LlmAccessibleUpdateNoteInput = Omit<UpdateNoteInput, "llm_access">;
+type PublicFilePolicy = {
+  vaultPathspec?: string;
+  trackedFiles: Set<string>;
+};
+type PublicScopeIssue = {
+  path: string;
+  reason: string;
+};
+type PublicScopeAudit = {
+  issues: PublicScopeIssue[];
+};
 
-const INTERNAL_EXPORT_KEYS = new Set(["llm_access"]);
+const INTERNAL_EXPORT_KEYS = new Set(["llm_access", ...standardSiteInternalFrontmatterKeys]);
 const IGNORED_FRONTMATTER_KEYS = new Set(["publish"]);
 const GIT_UPDATED_AT_FALLBACK = "2026-05-10T00:00:00+09:00";
 const gitCommitDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -143,6 +155,67 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
       return undefined;
     }
     return relative;
+  }
+
+  function repoRelativePath(absolutePath: string) {
+    const relative = path.relative(rootDir, absolutePath).replace(/\\/g, "/");
+    if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) {
+      return undefined;
+    }
+    return relative;
+  }
+
+  function parseZeroSeparatedPaths(output: string) {
+    return output
+      .split("\0")
+      .map((item) => item.trim().replace(/\\/g, "/"))
+      .filter(Boolean);
+  }
+
+  async function readPublicFilePolicy(): Promise<PublicFilePolicy> {
+    const vaultPathspec = gitVaultPathspec();
+    if (!vaultPathspec) {
+      return { trackedFiles: new Set() };
+    }
+    try {
+      const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--", vaultPathspec], {
+        cwd: rootDir,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      return {
+        vaultPathspec,
+        trackedFiles: new Set(parseZeroSeparatedPaths(stdout))
+      };
+    } catch {
+      return { vaultPathspec, trackedFiles: new Set() };
+    }
+  }
+
+  async function isIgnoredByGitignore(repoRelative: string) {
+    try {
+      await execFileAsync("git", ["check-ignore", "--no-index", "--quiet", "--", repoRelative], {
+        cwd: rootDir
+      });
+      return true;
+    } catch (error) {
+      const exitCode = (error as { code?: unknown }).code;
+      if (exitCode === 1) {
+        return false;
+      }
+      return false;
+    }
+  }
+
+  async function isPublicFile(absolutePath: string, policy: PublicFilePolicy) {
+    const relative = repoRelativePath(absolutePath);
+    if (!relative || !policy.trackedFiles.has(relative)) {
+      return false;
+    }
+    return !(await isIgnoredByGitignore(relative));
+  }
+
+  function isPublishOptIn(note: Pick<NoteDetail, "frontmatter"> | ParsedNote) {
+    return note.frontmatter.publish === true;
   }
 
   function parseGitUpdatedAtLog(output: string, vaultPathspec: string) {
@@ -522,6 +595,99 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     };
   }
 
+  async function adjustedPublicMedia(note: NoteDetail, policy: PublicFilePolicy) {
+    const media: NoteMedia[] = [];
+    const brokenMedia: NoteMedia[] = [];
+    const warnings: PublicExportResult["warnings"] = [];
+
+    for (const item of note.media) {
+      if (!item.exists) {
+        media.push(item);
+        brokenMedia.push(item);
+        warnings.push({ note: note.id, target: item.source, reason: "Media file cannot be resolved" });
+        continue;
+      }
+
+      const source = mediaVaultPath(note, item.path);
+      if (await isPublicFile(source.absolutePath, policy)) {
+        media.push(item);
+        continue;
+      }
+
+      const blocked = { ...item, exists: false, url: "" };
+      media.push(blocked);
+      brokenMedia.push(blocked);
+      warnings.push({ note: note.id, target: item.source, reason: "Media file is not public" });
+    }
+
+    return { media, brokenMedia, warnings };
+  }
+
+  async function buildPublicIndex(): Promise<{ index: WikiIndex; details: Map<string, NoteDetail>; warnings: PublicExportResult["warnings"] }> {
+    const { index, details } = await buildIndex();
+    const policy = await readPublicFilePolicy();
+    const publicDetails = new Map<string, NoteDetail>();
+
+    for (const note of index.notes) {
+      const detail = details.get(note.id);
+      if (!detail || !isPublishOptIn(detail)) {
+        continue;
+      }
+      if (await isPublicFile(safeVaultPath(detail.path), policy)) {
+        publicDetails.set(note.id, detail);
+      }
+    }
+
+    const publicIds = new Set(publicDetails.keys());
+    const adjustedDetails = new Map<string, NoteDetail>();
+    const warnings: PublicExportResult["warnings"] = [];
+
+    for (const [id, detail] of publicDetails) {
+      const mediaData = await adjustedPublicMedia(detail, policy);
+      warnings.push(...mediaData.warnings);
+      adjustedDetails.set(id, {
+        ...detail,
+        media: mediaData.media,
+        brokenMedia: mediaData.brokenMedia,
+        outgoing: detail.outgoing.filter((target) => publicIds.has(target)),
+        backlinks: detail.backlinks.filter((source) => publicIds.has(source))
+      });
+    }
+
+    const notes = [...adjustedDetails.values()]
+      .map((note) => {
+        const { body: _body, frontmatter: _frontmatter, ...summary } = note;
+        return summary;
+      })
+      .sort((a, b) => a.title.localeCompare(b.title, "ja"));
+
+    const tagCounts = new Map<string, number>();
+    const folderCounts = new Map<string, number>();
+    const broken: Array<{ from: string; target: string }> = [];
+
+    for (const note of notes) {
+      for (const tag of note.tags) {
+        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+      }
+      folderCounts.set(note.folder, (folderCounts.get(note.folder) ?? 0) + 1);
+      for (const target of note.brokenLinks) {
+        broken.push({ from: note.id, target });
+      }
+    }
+
+    return {
+      index: {
+        notes,
+        tags: [...tagCounts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name, "ja")),
+        folders: [...folderCounts.entries()].map(([folderPath, count]) => ({ path: folderPath, count })).sort((a, b) => a.path.localeCompare(b.path, "ja")),
+        brokenLinks: broken,
+        mediaWarnings: warnings
+      },
+      details: adjustedDetails,
+      warnings
+    };
+  }
+
   function matchesSearch(note: NoteSummary | NoteDetail, filters: SearchFilters) {
     const query = filters.query?.trim().toLowerCase();
     const tags = filters.tags?.filter(Boolean) ?? [];
@@ -543,6 +709,75 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     return index.notes
       .filter((note) => (!llmOnly || note.llm_access) && matchesSearch(details.get(note.id) ?? note, filters))
       .map((note) => details.get(note.id) ?? note);
+  }
+
+  async function searchPublicNotes(filters: SearchFilters = {}) {
+    const { details } = await buildPublicIndex();
+    return [...details.values()].filter((note) => matchesSearch(note, filters));
+  }
+
+  async function trackedIgnoredVaultFiles() {
+    const vaultPathspec = gitVaultPathspec();
+    if (!vaultPathspec) {
+      return [];
+    }
+    try {
+      const { stdout } = await execFileAsync("git", ["ls-files", "-ci", "--exclude-standard", "-z", "--", vaultPathspec], {
+        cwd: rootDir,
+        maxBuffer: 10 * 1024 * 1024
+      });
+      return parseZeroSeparatedPaths(stdout);
+    } catch {
+      return [];
+    }
+  }
+
+  async function auditPublicScope(): Promise<PublicScopeAudit> {
+    const issuesByKey = new Map<string, PublicScopeIssue>();
+    const addIssue = (pathValue: string, reason: string) => {
+      issuesByKey.set(`${pathValue}\0${reason}`, { path: pathValue, reason });
+    };
+
+    for (const file of await trackedIgnoredVaultFiles()) {
+      addIssue(file, "Tracked file is ignored by .gitignore");
+    }
+
+    const { index, details } = await buildIndex();
+    const policy = await readPublicFilePolicy();
+
+    for (const note of index.notes) {
+      const detail = details.get(note.id);
+      if (!detail || !isPublishOptIn(detail)) {
+        continue;
+      }
+
+      const notePath = safeVaultPath(detail.path);
+      const noteRepoPath = repoRelativePath(notePath) ?? detail.path;
+      if (!policy.trackedFiles.has(noteRepoPath)) {
+        addIssue(noteRepoPath, "Published note is not tracked by git");
+        continue;
+      }
+      if (await isIgnoredByGitignore(noteRepoPath)) {
+        addIssue(noteRepoPath, "Published note is ignored by .gitignore");
+        continue;
+      }
+
+      for (const media of detail.media.filter((item) => item.exists)) {
+        const mediaPath = mediaVaultPath(detail, media.path);
+        const mediaRepoPath = repoRelativePath(mediaPath.absolutePath) ?? mediaPath.vaultRelative;
+        if (!policy.trackedFiles.has(mediaRepoPath)) {
+          addIssue(mediaRepoPath, `Media referenced by published note ${detail.id} is not tracked by git`);
+          continue;
+        }
+        if (await isIgnoredByGitignore(mediaRepoPath)) {
+          addIssue(mediaRepoPath, `Media referenced by published note ${detail.id} is ignored by .gitignore`);
+        }
+      }
+    }
+
+    return {
+      issues: [...issuesByKey.values()].sort((a, b) => a.path.localeCompare(b.path, "ja") || a.reason.localeCompare(b.reason, "ja"))
+    };
   }
 
   async function getNote(id: string, llmOnly = false) {
@@ -642,7 +877,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
   }
 
   async function exportPublicSite(): Promise<PublicExportResult> {
-    const { index, details } = await buildIndex();
+    const { index, details, warnings } = await buildPublicIndex();
     await fs.rm(exportDir, { recursive: true, force: true });
     await fs.mkdir(exportDir, { recursive: true });
 
@@ -650,7 +885,7 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     const notesDir = path.join(dataDir, "notes");
     await fs.mkdir(notesDir, { recursive: true });
 
-    const result: PublicExportResult = { outputDir: exportDir, notes: [], media: [], warnings: [] };
+    const result: PublicExportResult = { outputDir: exportDir, notes: [], standardSiteNotes: [], media: [], warnings: [...warnings] };
 
     for (const note of index.notes) {
       const detail = details.get(note.id);
@@ -659,9 +894,6 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
       }
       for (const target of note.brokenLinks) {
         result.warnings.push({ note: note.id, target, reason: "Target note cannot be resolved" });
-      }
-      for (const target of note.brokenMedia) {
-        result.warnings.push({ note: note.id, target: target.source, reason: "Media file cannot be resolved" });
       }
       const frontmatter = { ...detail.frontmatter };
       for (const key of INTERNAL_EXPORT_KEYS) {
@@ -687,6 +919,9 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
         result.media.push(source.vaultRelative);
       }
       result.notes.push(note.id);
+      if (isStandardSiteNote(detail)) {
+        result.standardSiteNotes.push(note.id);
+      }
     }
 
     await fs.writeFile(path.join(dataDir, "index.json"), `${JSON.stringify(index, null, 2)}\n`, "utf8");
@@ -700,10 +935,12 @@ export function createWikiStore(options: WikiStoreOptions = {}) {
     buildIndex: async () => (await buildIndex()).index,
     getNote,
     searchNotes,
+    searchPublicNotes,
     createNote,
     updateNote,
     updateLlmAccessibleNote,
     resolveMediaFile,
+    auditPublicScope,
     exportPublicSite
   };
 }
